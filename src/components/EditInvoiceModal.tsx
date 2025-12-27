@@ -15,6 +15,7 @@ import { useAuth } from "@/contexts/SimpleAuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Tables } from "@/integrations/types";
 import { format } from "date-fns";
+import { logger } from "@/lib/logger";
 
 type Product = Tables<'products'>;
 
@@ -888,12 +889,11 @@ export const EditInvoiceModal = ({ isOpen, onClose, transaction, onSaved }: Edit
           .select();
 
         if (logError) {
-          console.error("Error logging invoice edit:", logError);
-          console.error("Error details:", JSON.stringify(logError, null, 2));
+          logger.error("Error logging invoice edit", logError, 'EditInvoiceModal');
           
           // Check if table doesn't exist
           if (logError.message?.includes('relation') || logError.message?.includes('does not exist')) {
-            console.error("⚠️ invoice_edit_logs table might not exist. Please run the migration: 20251212_create_invoice_edit_logs.sql");
+            logger.error("invoice_edit_logs table might not exist. Please run the migration: 20251212_create_invoice_edit_logs.sql", logError, 'EditInvoiceModal');
             toast({
               title: "Warning",
               description: "Invoice edit log could not be saved. Please ensure the database migration has been applied.",

@@ -5,22 +5,26 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SimpleAuthProvider, useAuth } from "@/contexts/SimpleAuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import { DemoMode } from "@/components/DemoMode";
 import { Layout } from "@/components/Layout";
-import Index from "./pages/Index";
-import Analytics from "./pages/Analytics";
-import InventoryPage from "./pages/Products";
-import Auth from "./pages/AuthNew";
-import Profile from "./pages/Profile";
-import SettingsFixed from "./pages/SettingsFixed";
-import Sellers from "./pages/Sellers";
-import Help from "./pages/Help";
-import NotFound from "./pages/NotFound";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { lazy, Suspense } from "react";
+import { SimplePageLoader } from "@/components/PageLoader";
+
+// Lazy load pages for code splitting
+const Index = lazy(() => import("./pages/Index"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const InventoryPage = lazy(() => import("./pages/Products"));
+const Auth = lazy(() => import("./pages/AuthNew"));
+const Profile = lazy(() => import("./pages/Profile"));
+const SettingsFixed = lazy(() => import("./pages/SettingsFixed"));
+const Sellers = lazy(() => import("./pages/Sellers"));
+const Help = lazy(() => import("./pages/Help"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
 const AppRoutes = () => {
-  const { hasSupabaseConfig, isLoading } = useAuth();
+  const { isLoading } = useAuth();
 
   // Show loading while auth context is initializing
   if (isLoading) {
@@ -36,31 +40,37 @@ const AppRoutes = () => {
     );
   }
 
-  if (!hasSupabaseConfig) {
-    return <DemoMode />;
-  }
-
   return (
     <Routes>
-      <Route path="/auth" element={<Auth />} />
+      <Route path="/auth" element={
+        <Suspense fallback={<SimplePageLoader />}>
+          <Auth />
+        </Suspense>
+      } />
       <Route path="/" element={
         <Layout>
           <ProtectedRoute>
-            <Index />
+            <Suspense fallback={<SimplePageLoader />}>
+              <Index />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
       <Route path="/analytics" element={
         <Layout>
           <ProtectedRoute>
-            <Analytics />
+            <Suspense fallback={<SimplePageLoader />}>
+              <Analytics />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
       <Route path="/inventory" element={
         <Layout>
           <ProtectedRoute requireAdminOrAccountant={true}>
-            <InventoryPage />
+            <Suspense fallback={<SimplePageLoader />}>
+              <InventoryPage />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
@@ -68,7 +78,9 @@ const AppRoutes = () => {
       <Route path="/profile" element={
         <Layout>
           <ProtectedRoute>
-            <Profile />
+            <Suspense fallback={<SimplePageLoader />}>
+              <Profile />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
@@ -76,7 +88,9 @@ const AppRoutes = () => {
       <Route path="/help" element={
         <Layout>
           <ProtectedRoute>
-            <Help />
+            <Suspense fallback={<SimplePageLoader />}>
+              <Help />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
@@ -84,7 +98,9 @@ const AppRoutes = () => {
       <Route path="/settings" element={
         <Layout>
           <ProtectedRoute requireAdmin={true}>
-            <SettingsFixed />
+            <Suspense fallback={<SimplePageLoader />}>
+              <SettingsFixed />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
@@ -92,17 +108,41 @@ const AppRoutes = () => {
       <Route path="/sellers" element={
         <Layout>
           <ProtectedRoute requireAdmin={true}>
-            <Sellers />
+            <Suspense fallback={<SimplePageLoader />}>
+              <Sellers />
+            </Suspense>
           </ProtectedRoute>
         </Layout>
       } />
       <Route path="*" element={
         <Layout>
-          <NotFound />
+          <Suspense fallback={<SimplePageLoader />}>
+            <NotFound />
+          </Suspense>
         </Layout>
       } />
     </Routes>
   );
+};
+
+// AppRoutes wrapper - no redirect logic needed, ProtectedRoute handles auth
+const AppRoutesWrapper = () => {
+  const { isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary/20">
+        <div className="text-center">
+          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4">
+            <div className="w-6 h-6 animate-pulse bg-primary-foreground rounded" />
+          </div>
+          <h2 className="text-lg font-semibold">Starting JNK Nutrition System...</h2>
+        </div>
+      </div>
+    );
+  }
+
+  return <AppRoutes />;
 };
 
 const App = () => {
@@ -110,23 +150,25 @@ const App = () => {
   const basename = process.env.NODE_ENV === 'production' && process.env.GITHUB_PAGES ? '/JNK-INVENTORY' : undefined;
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <SimpleAuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter
-            basename={basename}
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true
-            }}
-          >
-            <AppRoutes />
-          </BrowserRouter>
-        </TooltipProvider>
-      </SimpleAuthProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <SimpleAuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter
+              basename={basename}
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true
+              }}
+            >
+              <AppRoutesWrapper />
+            </BrowserRouter>
+          </TooltipProvider>
+        </SimpleAuthProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 };
 

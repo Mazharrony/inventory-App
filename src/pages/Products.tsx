@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Package, Edit2, Save, X, Upload, Download, Trash2, AlertTriangle, BarChart3, TrendingUp, DollarSign, AlertCircle, RefreshCw } from "lucide-react";
+import { Package, Edit2, Save, X, Upload, Download, Trash2, AlertTriangle, BarChart3, TrendingUp, DollarSign, AlertCircle, RefreshCw, Search, Filter, SortAsc, SortDesc, ChevronLeft, ChevronRight } from "lucide-react";
 import { format, startOfWeek, startOfMonth } from "date-fns";
 import {
   AlertDialog,
@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AppHeader } from "@/components/AppHeader";
+import { Skeleton } from "@/components/ui/skeleton";
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { Tables, TablesInsert } from "@/integrations/types";
@@ -30,6 +31,9 @@ import { bulkUpdateProducts, ProductUpdateRow, BulkUpdateResult } from "@/utils/
 import { recordStockMovementSafe } from "@/utils/stockMovementTracker";
 import { useAuth } from "@/contexts/SimpleAuthContext";
 import InventoryPurchaseOrder from "@/components/InventoryPurchaseOrder";
+import { getDemoData } from "@/lib/demoData";
+import { logger } from "@/lib/logger";
+import { cn } from "@/lib/utils";
 
 type StockMovement = Tables<'stock_movements'>;
 
@@ -41,6 +45,7 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Tables<'products'>[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Tables<'products'>[]>([]);
   const [productsTotal, setProductsTotal] = useState<number | null>(null);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [name, setName] = useState("");
   const [upc, setUpc] = useState("");
   const [price, setPrice] = useState("");
@@ -136,12 +141,6 @@ export default function InventoryPage() {
     return inventoryAnalytics.analyticsProducts.slice(startIdx, startIdx + analyticsItemsPerPage);
   }, [inventoryAnalytics.analyticsProducts, analyticsPage]);
 
-  // Fallback demo products
-  const demoProducts = [
-    { id: 'demo-1', name: 'Demo Whey Protein', upc: '00001', price: 99, stock: 20, is_active: true },
-    { id: 'demo-2', name: 'Demo Creatine', upc: '00002', price: 49, stock: 15, is_active: true },
-    { id: 'demo-3', name: 'Demo Multivitamin', upc: '00003', price: 29, stock: 30, is_active: true },
-  ];
   const [showDemoWarning, setShowDemoWarning] = useState(false);
 
   useEffect(() => {
@@ -282,103 +281,123 @@ export default function InventoryPage() {
   }, [stockMovements, movementSearchTerm, movementTypeFilter, movementDateFilter]);
 
   async function fetchProducts() {
-    // Build base query with all filters (reused for both queries)
-    let baseQuery = supabase
-      .from("products")
-      .select("*", { count: "exact" });
+    setIsLoadingProducts(true);
+    try {
+      // Build base query with all filters (reused for both queries)
+      let baseQuery = supabase
+        .from("products")
+        .select("*", { count: "exact" });
 
-    // Apply search filter at DB level
-    if (searchTerm && searchTerm.trim()) {
-      const searchPattern = `%${searchTerm.trim()}%`;
-      baseQuery = baseQuery.or(`name.ilike.${searchPattern},upc.ilike.${searchPattern}`);
-    }
+      // Apply search filter at DB level
+      if (searchTerm && searchTerm.trim()) {
+        const searchPattern = `%${searchTerm.trim()}%`;
+        baseQuery = baseQuery.or(`name.ilike.${searchPattern},upc.ilike.${searchPattern}`);
+      }
 
-    // Apply stock filter at DB level
-    if (stockFilter === "low") {
-      // Low stock: 1 to 9 (exclusive upper bound)
-      baseQuery = baseQuery.lt("stock", 10).gte("stock", 1);
-    } else if (stockFilter === "out") {
-      baseQuery = baseQuery.eq("stock", 0);
-    } else if (stockFilter === "negative") {
-      baseQuery = baseQuery.lt("stock", 0);
-    }
+      // Apply stock filter at DB level
+      if (stockFilter === "low") {
+        // Low stock: 1 to 9 (exclusive upper bound)
+        baseQuery = baseQuery.lt("stock", 10).gte("stock", 1);
+      } else if (stockFilter === "out") {
+        baseQuery = baseQuery.eq("stock", 0);
+      } else if (stockFilter === "negative") {
+        baseQuery = baseQuery.lt("stock", 0);
+      }
 
-    // Apply active filter at DB level
-    if (activeFilter === "active") {
-      // Treat null as active (matches previous client logic p.is_active !== false)
-      baseQuery = baseQuery.or("is_active.is.null,is_active.eq.true");
-    } else if (activeFilter === "inactive") {
-      baseQuery = baseQuery.eq("is_active", false);
-    }
+      // Apply active filter at DB level
+      if (activeFilter === "active") {
+        // Treat null as active (matches previous client logic p.is_active !== false)
+        baseQuery = baseQuery.or("is_active.is.null,is_active.eq.true");
+      } else if (activeFilter === "inactive") {
+        baseQuery = baseQuery.eq("is_active", false);
+      }
 
-    // Query 1: Get EXACT count only (no 1000-row limit)
-    let countQuery = supabase
-      .from("products")
-      .select("*", { count: "exact", head: true });
+      // Query 1: Get EXACT count only (no 1000-row limit)
+      let countQuery = supabase
+        .from("products")
+        .select("*", { count: "exact", head: true });
 
-    // Apply same filters to count query
-    if (searchTerm && searchTerm.trim()) {
-      const searchPattern = `%${searchTerm.trim()}%`;
-      countQuery = countQuery.or(`name.ilike.${searchPattern},upc.ilike.${searchPattern}`);
-    }
-    if (stockFilter === "low") {
-      // Low stock: 1 to 9 (exclusive upper bound)
-      countQuery = countQuery.lt("stock", 10).gte("stock", 1);
-    } else if (stockFilter === "out") {
-      countQuery = countQuery.eq("stock", 0);
-    } else if (stockFilter === "negative") {
-      countQuery = countQuery.lt("stock", 0);
-    }
-    if (activeFilter === "active") {
-      // Treat null as active to keep parity with client-side logic
-      countQuery = countQuery.or("is_active.is.null,is_active.eq.true");
-    } else if (activeFilter === "inactive") {
-      countQuery = countQuery.eq("is_active", false);
-    }
+      // Apply same filters to count query
+      if (searchTerm && searchTerm.trim()) {
+        const searchPattern = `%${searchTerm.trim()}%`;
+        countQuery = countQuery.or(`name.ilike.${searchPattern},upc.ilike.${searchPattern}`);
+      }
+      if (stockFilter === "low") {
+        // Low stock: 1 to 9 (exclusive upper bound)
+        countQuery = countQuery.lt("stock", 10).gte("stock", 1);
+      } else if (stockFilter === "out") {
+        countQuery = countQuery.eq("stock", 0);
+      } else if (stockFilter === "negative") {
+        countQuery = countQuery.lt("stock", 0);
+      }
+      if (activeFilter === "active") {
+        // Treat null as active to keep parity with client-side logic
+        countQuery = countQuery.or("is_active.is.null,is_active.eq.true");
+      } else if (activeFilter === "inactive") {
+        countQuery = countQuery.eq("is_active", false);
+      }
 
-    const { count: exactCount, error: countError } = await countQuery;
+      const { count: exactCount, error: countError } = await countQuery;
 
-    if (countError) {
-      console.error('Error counting products:', countError.message);
-    }
+      if (countError) {
+        logger.error('Error counting products', countError, 'Products');
+      }
 
-    console.log('DEBUG: exactCount =', exactCount, 'stockFilter =', stockFilter, 'activeFilter =', activeFilter, 'searchTerm =', searchTerm);
+      logger.debug('Product count query', { exactCount, stockFilter, activeFilter, searchTerm }, 'Products');
 
-    // Query 2: Get page data (limited to MAX_PRODUCTS_FETCH rows)
-    const { data, error } = await baseQuery
-      .order("created_at", { ascending: false })
-      .range(0, MAX_PRODUCTS_FETCH - 1);
+      // Query 2: Get page data (limited to MAX_PRODUCTS_FETCH rows)
+      const { data, error } = await baseQuery
+        .order("created_at", { ascending: false })
+        .range(0, MAX_PRODUCTS_FETCH - 1);
 
-    if (error) {
-      console.error('Error fetching products:', error.message);
-      toast({ title: "Error loading products", description: error.message, variant: "destructive" });
-      setProducts(demoProducts);
-      setProductsTotal(demoProducts.length);
-      setShowDemoWarning(true);
-      return;
-    }
+      if (error) {
+        logger.error('Error fetching products', error, 'Products');
+        // Fallback to demo products from demo data
+        const demoData = getDemoData();
+        const fallbackProducts = demoData.products || [];
+        setProducts(fallbackProducts as Tables<'products'>[]);
+        setProductsTotal(fallbackProducts.length);
+        setShowDemoWarning(false);
+        return;
+      }
 
-    const productsData = (data as unknown as Tables<'products'>[]) || [];
-    setProducts(productsData);
-    
-    // Use exact count from count-only query; if undefined, use data length as fallback
-    const finalCount = exactCount !== null && exactCount !== undefined ? exactCount : productsData.length;
-    setProductsTotal(finalCount);
-    console.log('DEBUG: Setting productsTotal to', finalCount);
-    setShowDemoWarning(false);
+      const productsData = (data as unknown as Tables<'products'>[]) || [];
+      
+      // If no products found, use demo products from demo data
+      if (productsData.length === 0) {
+        const demoData = getDemoData();
+        const fallbackProducts = demoData.products || [];
+        if (fallbackProducts.length > 0) {
+          setProducts(fallbackProducts as Tables<'products'>[]);
+          setProductsTotal(fallbackProducts.length);
+          setShowDemoWarning(false);
+          return;
+        }
+      }
+      
+      setProducts(productsData);
+      
+      // Use exact count from count-only query; if undefined, use data length as fallback
+      const finalCount = exactCount !== null && exactCount !== undefined ? exactCount : productsData.length;
+      setProductsTotal(finalCount);
+      logger.debug('Products loaded', { total: finalCount }, 'Products');
+      setShowDemoWarning(false);
 
-    if ((exactCount ?? productsData.length) === 0) {
-      setProducts(demoProducts);
-      setProductsTotal(demoProducts.length);
-      setShowDemoWarning(true);
-      return;
-    }
-
-    if ((exactCount ?? productsData.length) > MAX_PRODUCTS_FETCH) {
+      if ((exactCount ?? productsData.length) > MAX_PRODUCTS_FETCH) {
+        toast({
+          title: `Showing first ${MAX_PRODUCTS_FETCH.toLocaleString()} products`,
+          description: `You have ${(exactCount ?? productsData.length).toLocaleString()} products. Use search to narrow results.`,
+        });
+      }
+    } catch (error) {
+      logger.error('Error in fetchProducts', error, 'Products');
       toast({
-        title: `Showing first ${MAX_PRODUCTS_FETCH.toLocaleString()} products`,
-        description: `You have ${(exactCount ?? productsData.length).toLocaleString()} products. Use search to narrow results.`,
+        title: "Error",
+        description: "Failed to load products",
+        variant: "destructive",
       });
+    } finally {
+      setIsLoadingProducts(false);
     }
   }
   
@@ -1159,27 +1178,21 @@ export default function InventoryPage() {
         icon={<Package className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />} 
       />
 
-      {showDemoWarning && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-3 sm:p-4 mb-4 text-xs sm:text-sm mx-3 sm:mx-0">
-          <strong>Warning:</strong> No products found in Supabase. Showing demo products. Please check your database connection and data.
-        </div>
-      )}
-
       <main className="container mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8">
         <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6">
           <Tabs defaultValue="inventory" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6">
-              <TabsTrigger value="inventory" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+            <TabsList className="grid w-full grid-cols-3 mb-4 sm:mb-6 bg-muted/50 p-1 rounded-lg">
+              <TabsTrigger value="inventory" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-semibold data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <Package className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span className="hidden sm:inline">Inventory</span>
                 <span className="sm:hidden">Stock</span>
               </TabsTrigger>
-              <TabsTrigger value="purchase-order" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <TabsTrigger value="purchase-order" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-semibold data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <Package className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span className="hidden sm:inline">Purchase Order</span>
                 <span className="sm:hidden">Order</span>
               </TabsTrigger>
-              <TabsTrigger value="inventory-analytics" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm">
+              <TabsTrigger value="inventory-analytics" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm font-semibold data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span className="hidden sm:inline">Analytics</span>
                 <span className="sm:hidden">Stats</span>
@@ -1192,92 +1205,188 @@ export default function InventoryPage() {
           <AlertDialog open={deactivateDialog.open} onOpenChange={(open) => setDeactivateDialog(prev => ({ ...prev, open }))}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>{deactivateDialog.hasSales ? "Deactivate Product" : "Delete Product"}</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {deactivateDialog.hasSales
-                    ? `"${deactivateDialog.productName}" has sales history. It will be marked inactive instead of being deleted.`
-                    : `"${deactivateDialog.productName}" has no sales. This action will permanently delete the product.`}
+                <AlertDialogTitle className="flex items-center gap-2 text-xl">
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center",
+                    deactivateDialog.hasSales ? "bg-yellow-500/10" : "bg-destructive/10"
+                  )}>
+                    {deactivateDialog.hasSales ? (
+                      <AlertTriangle className="w-4 h-4 text-yellow-600" />
+                    ) : (
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    )}
+                  </div>
+                  {deactivateDialog.hasSales ? "Deactivate Product" : "Delete Product"}
+                </AlertDialogTitle>
+                <AlertDialogDescription className="pt-2 space-y-2">
+                  <p>
+                    {deactivateDialog.hasSales
+                      ? `"${deactivateDialog.productName}" has sales history. It will be marked inactive instead of being deleted.`
+                      : `"${deactivateDialog.productName}" has no sales. This action will permanently delete the product.`}
+                  </p>
+                  {!deactivateDialog.hasSales && (
+                    <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mt-2">
+                      <p className="text-sm font-semibold text-destructive">Warning: This action cannot be undone!</p>
+                    </div>
+                  )}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={() => setDeactivateDialog(prev => ({ ...prev, open: false }))}>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={confirmDeactivate}>{deactivateDialog.hasSales ? "Deactivate" : "Delete"}</AlertDialogAction>
+                <AlertDialogAction 
+                  onClick={confirmDeactivate}
+                  className={cn(
+                    deactivateDialog.hasSales 
+                      ? "bg-yellow-600 hover:bg-yellow-700" 
+                      : "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  )}
+                >
+                  {deactivateDialog.hasSales ? "Deactivate" : "Delete"}
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
 
           {/* Import Section */}
-          <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 sm:p-6">
-            <CardHeader className="px-0 pt-0">
+          <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover-lift">
+            <CardHeader className="pb-4">
               <CardTitle className="text-xl flex items-center gap-2">
-                <Upload className="h-5 w-5" />
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
+                  <Upload className="h-4 w-4 text-primary-foreground" />
+                </div>
                 Import Inventory
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-0 pb-0">
-              <div className="flex flex-col sm:flex-row gap-4 items-start">
-                <div className="flex-1">
+            <CardContent className="px-6 pb-6 space-y-5">
+              {/* File Upload Area */}
+              <div className="relative">
+                <label
+                  htmlFor="import-file"
+                  className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-border/60 rounded-xl bg-muted/30 hover:bg-muted/50 hover:border-primary/50 transition-all duration-200 cursor-pointer group"
+                >
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center mb-3 transition-colors">
+                      <Upload className="h-5 w-5 text-primary group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="mb-2 text-sm font-semibold text-foreground">
+                      <span className="text-primary">Click to upload</span> or drag and drop
+                    </p>
+                    <p className="text-xs text-muted-foreground">CSV, XLSX, or XLS (MAX. 10MB)</p>
+                  </div>
                   <Input
                     id="import-file"
                     type="file"
                     accept=".csv,.xlsx,.xls"
                     onChange={handleFileUpload}
-                    className="mb-2"
+                    className="hidden"
                   />
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Insert new products:</strong> Upload with columns: name, price, stock (required), upc (optional)
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    <strong>Update existing products:</strong> Product Name identifies products. Update UPC, price, or stock by matching names.
-                  </p>
+                </label>
+              </div>
+
+              {/* Instructions */}
+              <div className="bg-gradient-to-br from-muted/50 to-muted/30 border border-border/60 rounded-xl p-5 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Package className="h-3.5 w-3.5 text-primary" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold text-foreground">Insert new products</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Upload with columns: <code className="text-xs font-mono bg-background px-2 py-1 rounded border border-border/40 text-primary font-semibold">name</code>, <code className="text-xs font-mono bg-background px-2 py-1 rounded border border-border/40 text-primary font-semibold">price</code>, <code className="text-xs font-mono bg-background px-2 py-1 rounded border border-border/40 text-primary font-semibold">stock</code> <span className="text-destructive font-medium">(required)</span>, <code className="text-xs font-mono bg-background px-2 py-1 rounded border border-border/40 text-primary font-semibold">upc</code> <span className="text-muted-foreground">(optional)</span>
+                    </p>
+                  </div>
+                </div>
+                <div className="h-px bg-border/60" />
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-md bg-blue-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Edit2 className="h-3.5 w-3.5 text-blue-600" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold text-foreground">Update existing products</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Product Name identifies products. Update UPC, price, or stock by matching names.
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-2 mt-4">
-                  <Button
-                    onClick={processImportFile}
-                    disabled={!importFile || isImporting}
-                    className="flex items-center gap-2"
-                  >
-                    <Upload className="h-4 w-4" />
-                    {isImporting ? "Importing..." : "Import"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={downloadTemplate}
-                    className="flex items-center gap-2"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download Template
-                  </Button>
-                </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={processImportFile}
+                  disabled={!importFile || isImporting}
+                  className="flex items-center gap-2 hover-lift shadow-md"
+                  isLoading={isImporting}
+                >
+                  <Upload className="h-4 w-4" />
+                  {isImporting ? "Importing..." : "Import"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={downloadTemplate}
+                  className="flex items-center gap-2 hover-lift border-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download Template
+                </Button>
+              </div>
+
+              {/* Selected File Display */}
               {importFile && (
-                <div className="mt-4 p-3 bg-secondary/50 border border-primary/20 rounded-md">
-                  <p className="text-sm text-primary">
-                    <strong>Selected file:</strong> {importFile.name} ({Math.round(importFile.size / 1024)} KB)
-                  </p>
+                <div className="p-4 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/30 rounded-xl animate-fade-in shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center flex-shrink-0">
+                      <Upload className="h-6 w-6 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate">{importFile.name}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs text-muted-foreground">{Math.round(importFile.size / 1024)} KB</p>
+                        <span className="text-xs text-muted-foreground">•</span>
+                        <p className="text-xs font-medium text-primary">Ready to import</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setImportFile(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="flex-shrink-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-6">
-            <CardHeader className="px-0 pt-0">
-              <CardTitle className="text-2xl font-bold text-center">Add New Inventory Item</CardTitle>
+          <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover-lift">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-xl flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
+                  <Package className="h-4 w-4 text-primary-foreground" />
+                </div>
+                Add New Inventory Item
+              </CardTitle>
             </CardHeader>
-            <CardContent className="px-0 pb-0">
+            <CardContent className="px-6 pb-6">
               <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4" onSubmit={addProduct}>
                 <div className="lg:col-span-2 space-y-2">
-                  <Label htmlFor="product-name">Product Name *</Label>
+                  <Label htmlFor="product-name" className="text-sm font-semibold">Product Name *</Label>
                   <Input 
                     id="product-name"
                     placeholder="Enter product name" 
                     value={name} 
                     onChange={e => setName(e.target.value)} 
                     required 
+                    className="h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-upc">UPC / Barcode *</Label>
+                  <Label htmlFor="product-upc" className="text-sm font-semibold">UPC / Barcode *</Label>
                   <Input 
                     id="product-upc"
                     placeholder="Scan or type UPC" 
@@ -1285,10 +1394,11 @@ export default function InventoryPage() {
                     onChange={e => setUpc(e.target.value)} 
                     required 
                     autoFocus
+                    className="h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-price">Price (AED) *</Label>
+                  <Label htmlFor="product-price" className="text-sm font-semibold">Price (AED) *</Label>
                   <Input 
                     id="product-price"
                     placeholder="0.00" 
@@ -1298,10 +1408,11 @@ export default function InventoryPage() {
                     value={price} 
                     onChange={e => setPrice(e.target.value)} 
                     required 
+                    className="h-11"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="product-stock">Stock Quantity *</Label>
+                  <Label htmlFor="product-stock" className="text-sm font-semibold">Stock Quantity *</Label>
                   <Input 
                     id="product-stock"
                     placeholder="0" 
@@ -1310,10 +1421,12 @@ export default function InventoryPage() {
                     value={stock} 
                     onChange={e => setStock(e.target.value)} 
                     required 
+                    className="h-11"
                   />
                 </div>
-                <div className="lg:col-span-3 flex items-end">
-                  <Button type="submit" className="w-full">
+                <div className="lg:col-span-5 flex items-end pt-2">
+                  <Button type="submit" className="w-full bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-md hover:shadow-lg h-11 hover-lift">
+                    <Package className="w-4 h-4 mr-2" />
                     Add to Inventory
                   </Button>
                 </div>
@@ -1321,33 +1434,39 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift">
-            <CardHeader className="border-b border-border px-6 py-4">
+          <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover-lift">
+            <CardHeader className="border-b border-border/60 px-6 py-4">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <CardTitle className="text-xl">
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                    <Package className="h-4 w-4 text-primary-foreground" />
+                  </div>
                   {(() => {
                     const totalCount = productsTotal ?? filteredProducts.length ?? 0;
                     const totalDisplay = totalCount.toLocaleString();
                     const start = filteredProducts.length === 0 ? 0 : (inventoryPage - 1) * itemsPerPage + 1;
                     const end = filteredProducts.length === 0 ? 0 : start + paginatedProducts.length - 1;
                     return (
-                      <>Inventory (Items {start.toLocaleString()}–{end.toLocaleString()} of {totalDisplay}{searchTerm ? <span className="text-sm font-normal text-muted-foreground ml-2">— searching for "{searchTerm}"</span> : null})</>
+                      <span>
+                        Inventory <span className="text-sm font-normal text-muted-foreground">({start.toLocaleString()}–{end.toLocaleString()} of {totalDisplay}{searchTerm ? <span className="ml-1">— searching "{searchTerm}"</span> : null})</span>
+                      </span>
                     );
                   })()}
                 </CardTitle>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                   <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       placeholder="Search by name, keywords, or UPC..."
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
-                      className="w-full sm:w-72"
+                      className="w-full sm:w-72 pl-10 h-11"
                     />
                     {searchTerm && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="absolute right-1 top-1 h-8 w-8 p-0"
+                        className="absolute right-1 top-1 h-9 w-9 p-0"
                         onClick={() => setSearchTerm("")}
                       >
                         <X className="h-4 w-4" />
@@ -1355,68 +1474,76 @@ export default function InventoryPage() {
                     )}
                     {/* Search Suggestions Dropdown */}
                     {searchTerm && searchTerm.length >= 2 && getSearchSuggestions().length > 0 && (
-                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-white border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border/60 rounded-lg shadow-xl max-h-48 overflow-y-auto backdrop-blur-sm animate-fade-in">
                         {getSearchSuggestions().map((suggestion, index) => (
                           <div
                             key={index}
-                            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm border-b last:border-b-0"
+                            className="px-4 py-2.5 hover:bg-primary/10 cursor-pointer text-sm border-b border-border/60 last:border-b-0 transition-colors flex items-center gap-2"
                             onClick={() => setSearchTerm(suggestion)}
                           >
-                            <span className="text-gray-600"></span>
-                            <span className="font-medium">{suggestion}</span>
+                            <Search className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="font-medium text-foreground">{suggestion}</span>
                           </div>
                         ))}
-                        <div className="px-3 py-1 text-xs text-gray-500 bg-gray-50">
+                        <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/50 border-t border-border/60">
                           💡 Tip: Try "mu" for Muscle, "pro" for Protein
                         </div>
                       </div>
                     )}
                   </div>
                   
-                  {/* Stock Filter Dropdown - Compact */}
-                  <select 
-                    value={stockFilter} 
-                    onChange={e => setStockFilter(e.target.value)}
-                    className="px-3 py-2 border rounded-md bg-background text-sm min-w-[140px]"
-                  >
-                    <option value="all">All</option>
-                    <option value="negative">Negative</option>
-                    <option value="out">Out of Stock</option>
-                    <option value="low">Low Stock</option>
-                  </select>
+                  {/* Stock Filter Dropdown */}
+                  <Select value={stockFilter} onValueChange={setStockFilter}>
+                    <SelectTrigger className="w-full sm:w-[140px] h-11">
+                      <Filter className="w-4 h-4 mr-2" />
+                      <SelectValue placeholder="Stock Filter" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Stock</SelectItem>
+                      <SelectItem value="negative">Negative</SelectItem>
+                      <SelectItem value="out">Out of Stock</SelectItem>
+                      <SelectItem value="low">Low Stock</SelectItem>
+                    </SelectContent>
+                  </Select>
                   
-                  <select 
-                    value={activeFilter} 
-                    onChange={e => setActiveFilter(e.target.value)}
-                    className="px-3 py-2 border rounded-md bg-background text-sm min-w-[120px]"
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="all">All</option>
-                  </select>
+                  <Select value={activeFilter} onValueChange={setActiveFilter}>
+                    <SelectTrigger className="w-full sm:w-[140px] h-11">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                      <SelectItem value="all">All</SelectItem>
+                    </SelectContent>
+                  </Select>
 
-                  <select
+                  <Select
                     value={`${sortBy}-${sortDir}`}
-                    onChange={e => {
-                      const [field, dir] = e.target.value.split('-');
+                    onValueChange={(value) => {
+                      const [field, dir] = value.split('-');
                       setSortBy(field as any);
                       setSortDir(dir as any);
                     }}
-                    className="px-3 py-2 border rounded-md bg-background text-sm min-w-[160px]"
                   >
-                    <option value="name-asc">Name A → Z</option>
-                    <option value="name-desc">Name Z → A</option>
-                    <option value="stock-desc">Stock High → Low</option>
-                    <option value="stock-asc">Stock Low → High</option>
-                    <option value="price-asc">Price Low → High</option>
-                    <option value="price-desc">Price High → Low</option>
-                    <option value="created_at-desc">Newest First</option>
-                    <option value="created_at-asc">Oldest First</option>
-                  </select>
+                    <SelectTrigger className="w-full sm:w-[180px] h-11">
+                      {sortDir === 'asc' ? <SortAsc className="w-4 h-4 mr-2" /> : <SortDesc className="w-4 h-4 mr-2" />}
+                      <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name-asc">Name A → Z</SelectItem>
+                      <SelectItem value="name-desc">Name Z → A</SelectItem>
+                      <SelectItem value="stock-desc">Stock High → Low</SelectItem>
+                      <SelectItem value="stock-asc">Stock Low → High</SelectItem>
+                      <SelectItem value="price-asc">Price Low → High</SelectItem>
+                      <SelectItem value="price-desc">Price High → Low</SelectItem>
+                      <SelectItem value="created_at-desc">Newest First</SelectItem>
+                      <SelectItem value="created_at-asc">Oldest First</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="outline"
                     onClick={exportInventory}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 h-11 hover-lift"
                     disabled={filteredProducts.length === 0}
                   >
                     <Download className="h-4 w-4" />
@@ -1425,17 +1552,34 @@ export default function InventoryPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {searchTerm && filteredProducts.length === 0 ? (
-                <div className="text-center py-8">
-                  <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No products found</h3>
-                  <p className="text-muted-foreground mb-4">
-                    No products match your search for "{searchTerm}"
-                  </p>
-                  <div className="text-sm text-muted-foreground mb-4">
-                    <p className="mb-2">Try these search examples:</p>
-                    <ul className="list-disc list-inside space-y-1">
+            <CardContent className="px-6 py-6">
+              {isLoadingProducts ? (
+                <div className="space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="flex items-center gap-4 p-4 border border-border/60 rounded-lg bg-card/50">
+                      <Skeleton className="w-12 h-12 rounded-lg" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-48" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
+                      <Skeleton className="h-8 w-20 rounded-lg" />
+                    </div>
+                  ))}
+                </div>
+              ) : searchTerm && filteredProducts.length === 0 ? (
+                <div className="text-center py-12 space-y-4">
+                  <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto">
+                    <Search className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold mb-1">No products found</h3>
+                    <p className="text-muted-foreground mb-4">
+                      No products match your search for <strong>"{searchTerm}"</strong>
+                    </p>
+                  </div>
+                  <div className="text-sm text-muted-foreground mb-4 bg-muted/50 p-4 rounded-lg max-w-md mx-auto">
+                    <p className="font-semibold mb-2">Try these search examples:</p>
+                    <ul className="list-disc list-inside space-y-1 text-left">
                       <li><strong>"mu"</strong> → finds Muscle Rulz, Muscletech</li>
                       <li><strong>"pro"</strong> → finds Protein products</li>
                       <li><strong>"wh"</strong> → finds Whey products</li>
@@ -1452,7 +1596,7 @@ export default function InventoryPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border border-border/60 bg-card/95 backdrop-blur-sm">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1466,34 +1610,58 @@ export default function InventoryPage() {
               <TableBody>
                 {paginatedProducts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                      {searchTerm || stockFilter !== "all" ? "No products match your filters" : "No inventory items yet"}
+                    <TableCell colSpan={5} className="text-center py-12">
+                      <div className="space-y-3">
+                        <Package className="w-12 h-12 text-muted-foreground mx-auto" />
+                        <p className="text-muted-foreground font-medium">
+                          {searchTerm || stockFilter !== "all" ? "No products match your filters" : "No inventory items yet"}
+                        </p>
+                        {!searchTerm && stockFilter === "all" && (
+                          <Button onClick={() => document.getElementById('product-name')?.focus()} variant="outline" className="mt-2">
+                            Add Your First Product
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedProducts.map((p) => (
-                    <TableRow key={p.id} className={
-                      p.is_active === false ? "bg-gray-100 opacity-60" :
-                      p.stock < 0 ? "bg-red-100 border-red-200" : 
-                      p.stock === 0 ? "bg-red-50" : 
-                      p.stock < 10 ? "bg-yellow-50" : ""
-                    }>
+                  paginatedProducts.map((p) => {
+                    const stockStatus = p.stock < 0 ? 'negative' : p.stock === 0 ? 'out' : p.stock < 10 ? 'low' : 'ok';
+                    return (
+                    <TableRow 
+                      key={p.id} 
+                      className={cn(
+                        "transition-all duration-200 hover:bg-muted/50",
+                        p.is_active === false && "bg-muted/30 opacity-60",
+                        p.stock < 0 && "bg-destructive/5 border-destructive/20",
+                        p.stock === 0 && "bg-yellow-50/50 dark:bg-yellow-950/10",
+                        p.stock > 0 && p.stock < 10 && "bg-orange-50/50 dark:bg-orange-950/10"
+                      )}
+                    >
                       <TableCell className="font-medium">
                         {editingId === p.id ? (
                           <Input 
                             value={editForm.name || ""} 
                             onChange={e => setEditForm({...editForm, name: e.target.value})}
-                            className="min-w-[200px]"
+                            className="min-w-[200px] h-9"
                           />
                         ) : (
-                          <div>
-                            <div className="font-medium">
+                          <div className="space-y-1">
+                            <div className="font-semibold flex items-center gap-2">
                               {p.name}
-                              {p.is_active === false && <Badge variant="outline" className="ml-2 bg-gray-200">INACTIVE</Badge>}
+                              {p.is_active === false && (
+                                <Badge variant="outline" className="bg-muted text-muted-foreground text-xs">INACTIVE</Badge>
+                              )}
                             </div>
-                            {p.stock < 0 && <div className="text-xs text-red-700 font-bold">NEGATIVE INVENTORY ({p.stock})</div>}
-                            {p.stock === 0 && <div className="text-xs text-red-600 font-medium">OUT OF STOCK</div>}
-                            {p.stock > 0 && p.stock < 10 && <div className="text-xs text-yellow-600 font-medium">LOW STOCK</div>}
+                            {stockStatus === 'negative' && (
+                              <Badge variant="destructive" className="text-xs">NEGATIVE ({p.stock})</Badge>
+                            )}
+                            {stockStatus === 'out' && (
+                              <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300 text-xs">OUT OF STOCK</Badge>
+                            )}
+                            {stockStatus === 'low' && (
+                              <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300 text-xs">LOW STOCK</Badge>
+                            )}
                           </div>
                         )}
                       </TableCell>
@@ -1502,10 +1670,10 @@ export default function InventoryPage() {
                           <Input 
                             value={editForm.upc || ""} 
                             onChange={e => setEditForm({...editForm, upc: e.target.value})}
-                            className="min-w-[120px]"
+                            className="min-w-[120px] h-9"
                           />
                         ) : (
-                          <code className="text-sm bg-gray-100 px-2 py-1 rounded">{p.upc}</code>
+                          <code className="text-xs bg-muted px-2 py-1 rounded font-mono">{p.upc}</code>
                         )}
                       </TableCell>
                       <TableCell>
@@ -1515,10 +1683,10 @@ export default function InventoryPage() {
                             step="0.01"
                             value={editForm.price || ""} 
                             onChange={e => setEditForm({...editForm, price: e.target.value})}
-                            className="min-w-[100px]"
+                            className="min-w-[100px] h-9"
                           />
                         ) : (
-                          <span className="font-semibold text-green-600">AED {p.price}</span>
+                          <span className="font-semibold text-foreground">AED {p.price.toFixed(2)}</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -1527,40 +1695,71 @@ export default function InventoryPage() {
                             type="number"
                             value={editForm.stock || ""} 
                             onChange={e => setEditForm({...editForm, stock: e.target.value})}
-                            className="min-w-[80px]"
+                            className="min-w-[80px] h-9"
                           />
                         ) : (
-                          <span className={`font-semibold ${
-                            p.stock < 0 ? "text-red-700 bg-red-100 px-2 py-1 rounded" :
-                            p.stock === 0 ? "text-red-600" : 
-                            p.stock < 10 ? "text-yellow-600" : "text-primary/70"
-                          }`}>
-                            {p.stock < 0 ? `${p.stock} (NEGATIVE)` : p.stock}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={cn(
+                              "font-semibold",
+                              stockStatus === 'negative' && "text-destructive",
+                              stockStatus === 'out' && "text-yellow-600 dark:text-yellow-500",
+                              stockStatus === 'low' && "text-orange-600 dark:text-orange-500",
+                              stockStatus === 'ok' && "text-foreground"
+                            )}>
+                              {p.stock}
+                            </span>
+                            {stockStatus === 'negative' && (
+                              <AlertTriangle className="w-4 h-4 text-destructive" />
+                            )}
+                            {stockStatus === 'out' && (
+                              <AlertCircle className="w-4 h-4 text-yellow-600" />
+                            )}
+                            {stockStatus === 'low' && (
+                              <AlertTriangle className="w-4 h-4 text-orange-600" />
+                            )}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1 justify-center">
                           {editingId === p.id ? (
                             <>
-                              <Button variant="default" size="sm" onClick={saveEdit}>
+                              <Button variant="default" size="sm" onClick={saveEdit} className="hover-lift">
                                 <Save className="h-4 w-4" />
                               </Button>
-                              <Button variant="ghost" size="sm" onClick={cancelEdit}>
+                              <Button variant="ghost" size="sm" onClick={cancelEdit} className="hover-lift">
                                 <X className="h-4 w-4" />
                               </Button>
                             </>
                           ) : (
                             <>
-                              <Button variant="ghost" size="sm" onClick={() => startEdit(p)}>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => startEdit(p)}
+                                className="hover:bg-primary/10 hover:text-primary hover-lift"
+                                title="Edit Product"
+                              >
                                 <Edit2 className="h-4 w-4" />
                               </Button>
                               {p.is_active === false ? (
-                                <Button variant="default" size="sm" onClick={() => reactivateProduct(p.id)} title="Reactivate Product">
+                                <Button 
+                                  variant="default" 
+                                  size="sm" 
+                                  onClick={() => reactivateProduct(p.id)} 
+                                  title="Reactivate Product"
+                                  className="hover-lift"
+                                >
                                   <Package className="h-4 w-4" />
                                 </Button>
                               ) : (
-                                <Button variant="destructive" size="sm" onClick={() => deactivateProduct(p.id)} title="Delete/Deactivate Product">
+                                <Button 
+                                  variant="destructive" 
+                                  size="sm" 
+                                  onClick={() => deactivateProduct(p.id)} 
+                                  title="Delete/Deactivate Product"
+                                  className="hover-lift"
+                                >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               )}
@@ -1569,27 +1768,31 @@ export default function InventoryPage() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
       {/* Pagination Controls - Responsive, Compact, Right-Aligned */}
       {filteredProducts.length > itemsPerPage && (
-        <div className="w-full mt-4">
+        <div className="w-full mt-6 pt-4 border-t border-border/60">
           <div
-            className="flex flex-wrap md:justify-end justify-center items-center gap-2 md:gap-2 px-2 py-2"
+            className="flex flex-wrap md:justify-end justify-center items-center gap-2"
             style={{ minHeight: '48px' }}
           >
             <nav aria-label="Inventory pagination" className="w-full md:w-auto">
-              <ul className="inline-flex flex-wrap items-center space-x-1 text-sm w-full md:w-auto justify-center md:justify-end">
+              <ul className="inline-flex flex-wrap items-center gap-1.5 text-sm w-full md:w-auto justify-center md:justify-end">
                 {inventoryPage > 1 && (
                   <li>
-                    <button
-                      className="px-3 py-1 rounded-md border bg-background text-foreground hover:bg-muted transition-all"
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3 hover-lift"
                       onClick={() => setInventoryPage(inventoryPage - 1)}
                     >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
                       Prev
-                    </button>
+                    </Button>
                   </li>
                 )}
                 {/* Compact page number window logic */}
@@ -1612,13 +1815,15 @@ export default function InventoryPage() {
                   for (let page = startPage; page <= endPage; page++) {
                     pages.push(
                       <li key={page}>
-                        <button
-                          className={`px-3 py-1 rounded-md border ${inventoryPage === page ? 'bg-primary text-white font-bold shadow' : 'bg-background text-foreground hover:bg-muted'} transition-all`}
+                        <Button
+                          variant={inventoryPage === page ? "default" : "outline"}
+                          size="sm"
+                          className={`h-9 px-3 min-w-[36px] ${inventoryPage === page ? 'shadow-md' : 'hover-lift'}`}
                           onClick={() => setInventoryPage(page)}
                           aria-current={inventoryPage === page ? 'page' : undefined}
                         >
                           {page}
-                        </button>
+                        </Button>
                       </li>
                     );
                   }
@@ -1626,12 +1831,15 @@ export default function InventoryPage() {
                 })()}
                 {inventoryPage < totalPages && (
                   <li>
-                    <button
-                      className="px-3 py-1 rounded-md border bg-background text-foreground hover:bg-muted transition-all"
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3 hover-lift"
                       onClick={() => setInventoryPage(inventoryPage + 1)}
                     >
                       Next
-                    </button>
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
                   </li>
                 )}
               </ul>
@@ -1658,101 +1866,159 @@ export default function InventoryPage() {
             {/* INVENTORY ANALYTICS TAB */}
             <TabsContent value="inventory-analytics" className="space-y-6">
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                  <CardHeader className="p-0 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
                     <div className="flex items-center justify-between h-full">
-                      <div className="flex-1">
-                        <p className="text-sm text-muted-foreground mb-1 font-medium">Total Products</p>
-                        <p className="text-xl sm:text-2xl font-semibold text-foreground">{(productsTotal ?? inventoryAnalytics.totalProducts).toLocaleString()}</p>
+                      <div className="flex-1 space-y-1">
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Total Products</p>
+                        <p className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">{(productsTotal ?? inventoryAnalytics.totalProducts).toLocaleString()}</p>
                       </div>
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg bg-gradient-primary shadow-md flex-shrink-0 ml-4">
-                        <Package className="w-5 h-5 text-white" />
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                        <Package className="w-6 h-6 sm:w-7 sm:h-7 text-primary-foreground drop-shadow-sm" />
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                  <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                     <p>Active products in inventory</p>
                   </CardContent>
                 </Card>
 
-                <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                  <CardHeader className="p-0 flex-1">
+                <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
                     <div className="flex items-center justify-between h-full">
-                      <div className="flex-1">
-                        <p className="text-sm text-muted-foreground mb-1 font-medium">Total Stock Units</p>
-                        <p className="text-xl sm:text-2xl font-semibold text-foreground">{inventoryAnalytics.totalStockUnits.toLocaleString()}</p>
+                      <div className="flex-1 space-y-1">
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Total Stock Units</p>
+                        <p className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">{inventoryAnalytics.totalStockUnits.toLocaleString()}</p>
                       </div>
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-md flex-shrink-0 ml-4">
-                        <TrendingUp className="w-5 h-5 text-white" />
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                        <TrendingUp className="w-6 h-6 sm:w-7 sm:h-7 text-white drop-shadow-sm" />
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                  <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                     <p>Units in stock</p>
                   </CardContent>
                 </Card>
 
-                <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                  <CardHeader className="p-0 flex-1">
-                    <div className="flex-1">
-                      <p className="text-sm text-muted-foreground mb-1 font-medium">Estimated Value</p>
-                      <p className="text-xl sm:text-2xl font-semibold text-foreground">AED {inventoryAnalytics.estimatedValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                  <div className="absolute inset-0 bg-gradient-to-br from-success/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
+                    <div className="flex items-center justify-between h-full">
+                      <div className="flex-1 space-y-1">
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Estimated Value</p>
+                        <p className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">AED {inventoryAnalytics.estimatedValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      </div>
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-success to-success/80 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                        <DollarSign className="w-6 h-6 sm:w-7 sm:h-7 text-white drop-shadow-sm" />
+                      </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                  <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                     <p>Total inventory value</p>
                   </CardContent>
                 </Card>
 
-                <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                  <CardHeader className="p-0 flex-1">
-                    <div className="flex-1">
-                      <p className="text-sm text-muted-foreground mb-1 font-medium">Stock Alerts</p>
-                      <div className="space-y-1">
-                        <div className="text-lg font-bold text-yellow-600">{inventoryAnalytics.lowStockCount}{products.length < (productsTotal ?? products.length) ? '+' : ''} Low</div>
-                        <div className="text-sm text-red-600">{inventoryAnalytics.outOfStockCount}{products.length < (productsTotal ?? products.length) ? '+' : ''} Out</div>
-                        {inventoryAnalytics.negativeStockCount > 0 && (
-                          <div className="text-sm text-red-700 font-bold">{inventoryAnalytics.negativeStockCount}{products.length < (productsTotal ?? products.length) ? '+' : ''} Negative</div>
-                        )}
+                <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                  <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
+                    <div className="flex items-center justify-between h-full">
+                      <div className="flex-1 space-y-1">
+                        <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Stock Alerts</p>
+                        <div className="space-y-1">
+                          {inventoryAnalytics.lowStockCount > 0 && (
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300 text-xs font-semibold">
+                                {inventoryAnalytics.lowStockCount}{products.length < (productsTotal ?? products.length) ? '+' : ''} Low
+                              </Badge>
+                            </div>
+                          )}
+                          {inventoryAnalytics.outOfStockCount > 0 && (
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300 text-xs font-semibold">
+                                {inventoryAnalytics.outOfStockCount}{products.length < (productsTotal ?? products.length) ? '+' : ''} Out
+                              </Badge>
+                            </div>
+                          )}
+                          {inventoryAnalytics.negativeStockCount > 0 && (
+                            <div className="flex items-center gap-2">
+                              <Badge variant="destructive" className="text-xs font-semibold">
+                                {inventoryAnalytics.negativeStockCount}{products.length < (productsTotal ?? products.length) ? '+' : ''} Negative
+                              </Badge>
+                            </div>
+                          )}
+                          {inventoryAnalytics.lowStockCount === 0 && inventoryAnalytics.outOfStockCount === 0 && inventoryAnalytics.negativeStockCount === 0 && (
+                            <Badge variant="outline" className="bg-success/10 text-success border-success/30 text-xs font-semibold">
+                              All Good
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                        <AlertTriangle className="w-6 h-6 sm:w-7 sm:h-7 text-white drop-shadow-sm" />
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                  <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                     <p>Stock status alerts</p>
                   </CardContent>
                 </Card>
               </div>
 
               {/* Analytics Table */}
-              <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift">
-                <CardHeader className="border-b border-border px-6 py-4">
+              <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover-lift">
+                <CardHeader className="border-b border-border/60 px-6 py-5 bg-gradient-to-r from-muted/30 to-transparent">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <CardTitle className="text-xl">
-                      Product Analytics ({(productsTotal ?? inventoryAnalytics.analyticsProducts.length).toLocaleString()} products)
-                    </CardTitle>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-md">
+                        <BarChart3 className="h-5 w-5 text-primary-foreground" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-xl font-bold flex items-center gap-2">
+                          Product Analytics
+                        </CardTitle>
+                        <p className="text-sm text-muted-foreground mt-0.5">
+                          {(productsTotal ?? inventoryAnalytics.analyticsProducts.length).toLocaleString()} products • Total value: AED {inventoryAnalytics.analyticsProducts.reduce((sum, p) => sum + (p.price * Math.max(0, p.stock)), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    </div>
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                      <Input
-                        placeholder="Search products..."
-                        value={analyticsSearch}
-                        onChange={e => setAnalyticsSearch(e.target.value)}
-                        className="w-full sm:w-64"
-                      />
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+                        <Input
+                          placeholder="Search products..."
+                          value={analyticsSearch}
+                          onChange={e => setAnalyticsSearch(e.target.value)}
+                          className="w-full sm:w-64 pl-10 h-11 pr-10"
+                        />
+                        {analyticsSearch && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute right-1 top-1 h-9 w-9 p-0"
+                            onClick={() => setAnalyticsSearch("")}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 px-4 py-2 border-2 border-border/60 rounded-lg bg-background hover:border-primary/50 transition-colors">
+                        <label className="flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
                           <input
                             type="checkbox"
                             checked={analyticsLowStockFilter}
                             onChange={e => setAnalyticsLowStockFilter(e.target.checked)}
-                            className="rounded"
+                            className="w-4 h-4 rounded border-2 border-primary/30 text-primary focus:ring-2 focus:ring-primary/20 cursor-pointer"
                           />
-                          Low Stock Only
+                          <span className="text-foreground">Low Stock Only</span>
                         </label>
                       </div>
                       <Button
                         variant="outline"
                         onClick={exportAnalytics}
-                        className="flex items-center gap-2"
+                        className="flex items-center gap-2 h-11 hover-lift border-2"
                         disabled={inventoryAnalytics.analyticsProducts.length === 0}
                       >
                         <Download className="h-4 w-4" />
@@ -1761,24 +2027,48 @@ export default function InventoryPage() {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
+                <CardContent className="px-0 py-0">
+                  <div className="overflow-x-auto rounded-lg border-t border-border/60">
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead className="font-semibold">Product Name</TableHead>
-                          <TableHead className="font-semibold">UPC</TableHead>
-                          <TableHead className="font-semibold text-right">Price (AED)</TableHead>
-                          <TableHead className="font-semibold text-right">Stock</TableHead>
-                          <TableHead className="font-semibold text-right">Total Value</TableHead>
-                          <TableHead className="font-semibold text-center">Status</TableHead>
+                        <TableRow className="bg-muted/30 hover:bg-muted/30">
+                          <TableHead className="font-bold text-sm uppercase tracking-wide py-4">Product Name</TableHead>
+                          <TableHead className="font-bold text-sm uppercase tracking-wide py-4">UPC</TableHead>
+                          <TableHead className="font-bold text-sm uppercase tracking-wide py-4 text-right">Price (AED)</TableHead>
+                          <TableHead className="font-bold text-sm uppercase tracking-wide py-4 text-right">Stock</TableHead>
+                          <TableHead className="font-bold text-sm uppercase tracking-wide py-4 text-right">Total Value</TableHead>
+                          <TableHead className="font-bold text-sm uppercase tracking-wide py-4 text-center">Status</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {paginatedAnalyticsProducts.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                              No products match your filters
+                            <TableCell colSpan={6} className="text-center py-16">
+                              <div className="space-y-4">
+                                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto">
+                                  <Search className="w-8 h-8 text-muted-foreground" />
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-semibold mb-1">No products found</h3>
+                                  <p className="text-muted-foreground text-sm">
+                                    {analyticsSearch || analyticsLowStockFilter 
+                                      ? "Try adjusting your search or filters" 
+                                      : "No products available"}
+                                  </p>
+                                </div>
+                                {(analyticsSearch || analyticsLowStockFilter) && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                      setAnalyticsSearch("");
+                                      setAnalyticsLowStockFilter(false);
+                                    }}
+                                    className="mt-2"
+                                  >
+                                    Clear Filters
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ) : (
@@ -1787,44 +2077,65 @@ export default function InventoryPage() {
                             const stockStatus = product.stock < 0 ? 'negative' : product.stock === 0 ? 'out' : product.stock < 10 ? 'low' : 'ok';
                             
                             return (
-                              <TableRow key={product.id} className={
-                                product.stock < 0 ? "bg-red-100" :
-                                product.stock === 0 ? "bg-red-50" :
-                                product.stock < 10 ? "bg-yellow-50" : ""
-                              }>
-                                <TableCell className="font-medium max-w-xs">
-                                  <div className="truncate" title={product.name}>{product.name}</div>
+                              <TableRow 
+                                key={product.id} 
+                                className={cn(
+                                  "transition-all duration-200 hover:bg-muted/30 border-b border-border/40",
+                                  product.stock < 0 && "bg-destructive/5 border-destructive/20",
+                                  product.stock === 0 && "bg-yellow-50/50 dark:bg-yellow-950/10",
+                                  product.stock > 0 && product.stock < 10 && "bg-orange-50/50 dark:bg-orange-950/10"
+                                )}
+                              >
+                                <TableCell className="font-semibold py-4">
+                                  <div className="max-w-xs">
+                                    <div className="truncate text-foreground" title={product.name}>{product.name}</div>
+                                  </div>
                                 </TableCell>
-                                <TableCell>
-                                  <code className="text-xs bg-gray-100 px-2 py-1 rounded">{product.upc}</code>
+                                <TableCell className="py-4">
+                                  <code className="text-xs bg-muted/80 px-2.5 py-1.5 rounded-md font-mono border border-border/40 text-foreground">{product.upc}</code>
                                 </TableCell>
-                                <TableCell className="text-right font-semibold text-green-600">
-                                  {product.price.toFixed(2)}
+                                <TableCell className="text-right font-bold text-foreground py-4">
+                                  <span className="text-base">AED {product.price.toFixed(2)}</span>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  <span className={`font-semibold ${
-                                    product.stock < 0 ? "text-red-700" :
-                                    product.stock === 0 ? "text-red-600" :
-                                    product.stock < 10 ? "text-yellow-600" : "text-primary/70"
-                                  }`}>
-                                    {product.stock}
+                                <TableCell className="text-right py-4">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className={cn(
+                                      "font-bold text-base",
+                                      stockStatus === 'negative' && "text-destructive",
+                                      stockStatus === 'out' && "text-yellow-600 dark:text-yellow-500",
+                                      stockStatus === 'low' && "text-orange-600 dark:text-orange-500",
+                                      stockStatus === 'ok' && "text-foreground"
+                                    )}>
+                                      {product.stock.toLocaleString()}
+                                    </span>
+                                    {stockStatus === 'negative' && (
+                                      <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0" />
+                                    )}
+                                    {stockStatus === 'out' && (
+                                      <AlertCircle className="w-4 h-4 text-yellow-600 flex-shrink-0" />
+                                    )}
+                                    {stockStatus === 'low' && (
+                                      <AlertTriangle className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right py-4">
+                                  <span className="font-bold text-primary text-base">
+                                    AED {totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </TableCell>
-                                <TableCell className="text-right font-bold text-primary">
-                                  {totalValue.toFixed(2)}
-                                </TableCell>
-                                <TableCell className="text-center">
+                                <TableCell className="text-center py-4">
                                   {stockStatus === 'negative' && (
-                                    <Badge variant="destructive" className="bg-red-700">NEGATIVE</Badge>
+                                    <Badge variant="destructive" className="font-bold px-3 py-1 text-xs">NEGATIVE</Badge>
                                   )}
                                   {stockStatus === 'out' && (
-                                    <Badge variant="destructive">OUT</Badge>
+                                    <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-300 font-bold px-3 py-1 text-xs">OUT</Badge>
                                   )}
                                   {stockStatus === 'low' && (
-                                    <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-300">LOW</Badge>
+                                    <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-300 font-bold px-3 py-1 text-xs">LOW</Badge>
                                   )}
                                   {stockStatus === 'ok' && (
-                                    <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">OK</Badge>
+                                    <Badge variant="outline" className="bg-success/10 text-success border-success/30 font-bold px-3 py-1 text-xs">OK</Badge>
                                   )}
                                 </TableCell>
                               </TableRow>
@@ -1839,15 +2150,17 @@ export default function InventoryPage() {
               </Card>
               
               {/* Stock Movement History Section */}
-              <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift">
-                <CardHeader className="border-b border-border px-6 py-4">
+              <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg">
+                <CardHeader className="border-b border-border/60 px-6 py-4">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
-                      <CardTitle className="flex items-center gap-2">
-                        <Package className="h-5 w-5" />
+                      <CardTitle className="flex items-center gap-2 text-xl">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                          <Package className="h-4 w-4 text-primary-foreground" />
+                        </div>
                         Stock Movement History
                       </CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1">
+                      <p className="text-sm text-muted-foreground mt-1 font-medium">
                         Track all stock imports and increases for inventory auditing
                       </p>
                     </div>
@@ -1856,7 +2169,7 @@ export default function InventoryPage() {
                         variant="outline"
                         onClick={exportStockMovements}
                         disabled={filteredMovements.length === 0}
-                        className="flex items-center gap-2"
+                        className="flex items-center gap-2 h-11 hover-lift"
                       >
                         <Download className="h-4 w-4" />
                         Export
@@ -1864,7 +2177,7 @@ export default function InventoryPage() {
                       <Button
                         variant="outline"
                         onClick={fetchStockMovements}
-                        className="flex items-center gap-2"
+                        className="flex items-center gap-2 h-11 hover-lift"
                       >
                         <RefreshCw className="h-4 w-4" />
                         Refresh
@@ -1875,14 +2188,18 @@ export default function InventoryPage() {
                 <CardContent>
                   {/* Filters */}
                   <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                    <Input
-                      placeholder="Search by product name..."
-                      value={movementSearchTerm}
-                      onChange={(e) => setMovementSearchTerm(e.target.value)}
-                      className="sm:w-[300px]"
-                    />
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search by product name..."
+                        value={movementSearchTerm}
+                        onChange={(e) => setMovementSearchTerm(e.target.value)}
+                        className="sm:w-[300px] pl-10 h-11"
+                      />
+                    </div>
                     <Select value={movementTypeFilter} onValueChange={setMovementTypeFilter}>
-                      <SelectTrigger className="sm:w-[180px]">
+                      <SelectTrigger className="sm:w-[180px] h-11">
+                        <Filter className="w-4 h-4 mr-2" />
                         <SelectValue placeholder="Movement Type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1894,7 +2211,7 @@ export default function InventoryPage() {
                       </SelectContent>
                     </Select>
                     <Select value={movementDateFilter} onValueChange={setMovementDateFilter}>
-                      <SelectTrigger className="sm:w-[180px]">
+                      <SelectTrigger className="sm:w-[180px] h-11">
                         <SelectValue placeholder="Date Range" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1908,101 +2225,117 @@ export default function InventoryPage() {
 
                   {/* Summary Cards */}
                   <div className="grid gap-4 md:grid-cols-3 mb-6">
-                    <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                      <CardHeader className="p-0 flex-1">
+                    <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                      <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
                         <div className="flex items-center justify-between h-full">
-                          <div className="flex-1">
-                            <p className="text-sm text-muted-foreground mb-1 font-medium">Total Movements</p>
-                            <p className="text-xl sm:text-2xl font-semibold text-foreground">{filteredMovements.length}</p>
+                          <div className="flex-1 space-y-1">
+                            <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Total Movements</p>
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">{filteredMovements.length}</p>
                           </div>
-                          <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 shadow-md flex-shrink-0 ml-4">
-                            <Package className="w-5 h-5 text-white" />
+                          <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                            <Package className="w-6 h-6 sm:w-7 sm:h-7 text-white drop-shadow-sm" />
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                      <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                         <p>Import records</p>
                       </CardContent>
                     </Card>
-                    <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                      <CardHeader className="p-0 flex-1">
+                    <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                      <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
                         <div className="flex items-center justify-between h-full">
-                          <div className="flex-1">
-                            <p className="text-sm text-muted-foreground mb-1 font-medium">Total Units Added</p>
-                            <p className="text-xl sm:text-2xl font-semibold text-foreground">
-                              {filteredMovements.reduce((sum, m) => sum + m.quantity_added, 0)}
+                          <div className="flex-1 space-y-1">
+                            <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Total Units Added</p>
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">
+                              {filteredMovements.reduce((sum, m) => sum + m.quantity_added, 0).toLocaleString()}
                             </p>
                           </div>
-                          <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-md flex-shrink-0 ml-4">
-                            <TrendingUp className="w-5 h-5 text-white" />
+                          <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                            <TrendingUp className="w-6 h-6 sm:w-7 sm:h-7 text-white drop-shadow-sm" />
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                      <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                         <p>Total stock increase</p>
                       </CardContent>
                     </Card>
-                    <Card className="rounded-xl border bg-card/95 backdrop-blur-sm text-card-foreground shadow-modern transition-smooth hover:shadow-modern-lg hover-lift p-4 h-32 flex flex-col">
-                      <CardHeader className="p-0 flex-1">
-                        <div className="flex-1">
-                          <p className="text-sm text-muted-foreground mb-1 font-medium">Unique Products</p>
-                          <p className="text-xl sm:text-2xl font-semibold text-foreground">
-                            {new Set(filteredMovements.map(m => m.product_id)).size}
-                          </p>
+                    <Card className="group relative overflow-hidden border-border/60 bg-card/95 backdrop-blur-sm shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                      <div className="absolute inset-0 bg-gradient-to-br from-success/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                      <CardHeader className="p-4 sm:p-5 flex-1 relative z-10">
+                        <div className="flex items-center justify-between h-full">
+                          <div className="flex-1 space-y-1">
+                            <p className="text-xs sm:text-sm text-muted-foreground font-medium uppercase tracking-wide">Unique Products</p>
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-foreground">
+                              {new Set(filteredMovements.map(m => m.product_id)).size}
+                            </p>
+                          </div>
+                          <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center rounded-xl bg-gradient-to-br from-success to-success/80 flex-shrink-0 ml-3 sm:ml-4 shadow-lg group-hover:scale-110 transition-transform duration-300">
+                            <Package className="w-6 h-6 sm:w-7 sm:h-7 text-white drop-shadow-sm" />
+                          </div>
                         </div>
                       </CardHeader>
-                      <CardContent className="p-0 mt-3 text-xs text-muted-foreground">
+                      <CardContent className="p-0 px-4 pb-4 text-xs text-muted-foreground relative z-10">
                         <p>Products restocked</p>
                       </CardContent>
                     </Card>
                   </div>
 
                   {/* Stock Movements Table */}
-                  <div className="rounded-lg border border-border overflow-hidden bg-card/95 backdrop-blur-sm shadow-modern">
+                  <div className="rounded-lg border border-border/60 overflow-hidden bg-card/95 backdrop-blur-sm shadow-lg">
                     <Table className="w-full">
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Product Name</TableHead>
-                          <TableHead className="text-center">Imported Qty</TableHead>
-                          <TableHead className="text-center">Previous → New</TableHead>
-                          <TableHead>Date/Time</TableHead>
-                          <TableHead>Movement Type</TableHead>
-                          <TableHead>Imported By</TableHead>
-                          <TableHead>Notes</TableHead>
+                          <TableHead className="font-semibold">Product Name</TableHead>
+                          <TableHead className="text-center font-semibold">Imported Qty</TableHead>
+                          <TableHead className="text-center font-semibold">Previous → New</TableHead>
+                          <TableHead className="font-semibold">Date/Time</TableHead>
+                          <TableHead className="font-semibold">Movement Type</TableHead>
+                          <TableHead className="font-semibold">Imported By</TableHead>
+                          <TableHead className="font-semibold">Notes</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredMovements.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                              {movementSearchTerm || movementTypeFilter !== 'all' || movementDateFilter !== 'all' 
-                                ? 'No stock movements match your filters' 
-                                : 'No stock movements recorded yet'}
+                            <TableCell colSpan={7} className="text-center py-12">
+                              <div className="space-y-3">
+                                <Package className="w-12 h-12 text-muted-foreground mx-auto" />
+                                <p className="text-muted-foreground font-medium">
+                                  {movementSearchTerm || movementTypeFilter !== 'all' || movementDateFilter !== 'all' 
+                                    ? 'No stock movements match your filters' 
+                                    : 'No stock movements recorded yet'}
+                                </p>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ) : (
                           filteredMovements.map((movement) => (
-                            <TableRow key={movement.id}>
+                            <TableRow 
+                              key={movement.id}
+                              className="transition-all duration-200 hover:bg-muted/50"
+                            >
                               <TableCell className="font-medium">{movement.product_name}</TableCell>
                               <TableCell className="text-center">
-                                <Badge variant="default" className="bg-green-600">
+                                <Badge variant="default" className="bg-primary font-semibold">
                                   +{movement.quantity_added} pcs
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-center font-mono text-sm">
-                                {movement.previous_stock} → {movement.new_stock}
+                              <TableCell className="text-center font-mono text-sm font-semibold">
+                                <span className="text-muted-foreground">{movement.previous_stock}</span> → <span className="text-foreground">{movement.new_stock}</span>
                               </TableCell>
-                              <TableCell className="whitespace-nowrap">
+                              <TableCell className="whitespace-nowrap text-sm">
                                 {format(new Date(movement.created_at), "MMM dd, yyyy HH:mm")}
                               </TableCell>
                               <TableCell>
-                                <Badge variant="outline" className="capitalize">
+                                <Badge variant="outline" className="capitalize font-semibold">
                                   {movement.movement_type.replace('_', ' ')}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="text-sm">{movement.created_by}</TableCell>
+                              <TableCell className="text-sm font-medium">{movement.created_by}</TableCell>
                               <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                                {movement.notes || '-'}
+                                {movement.notes || <span className="text-muted-foreground/50">-</span>}
                               </TableCell>
                             </TableRow>
                           ))

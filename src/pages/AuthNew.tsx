@@ -1,7 +1,6 @@
 
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/client";
 import { useAuth } from "@/contexts/SimpleAuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,6 @@ import {
   AlertCircle,
   User
 } from "lucide-react";
-import bcrypt from "bcryptjs";
 
 const AuthNew: React.FC = () => {
   const [username, setUsername] = useState("");
@@ -31,6 +29,15 @@ const AuthNew: React.FC = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading, setUser } = useAuth();
   const { toast } = useToast();
+
+  // Pre-fill credentials for convenience
+  React.useEffect(() => {
+    if (!username && !password) {
+      setUsername("admin");
+      setPassword("admin");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Redirect if already logged in
   React.useEffect(() => {
@@ -55,56 +62,39 @@ const AuthNew: React.FC = () => {
     try {
       console.log('Attempting login with:', { username: username.trim(), password: password.trim() });
       
-      // Try admin_users table first
-      let { data, error } = await (supabase as any)
-        .from('admin_users')
-        .select('*')
-        .eq('username', username.trim())
-        .eq('password_hash', password.trim())
-        .single();
-
-      // If admin_users doesn't work, try profiles table
-      if (error && error.code === 'PGRST106') {
-        console.log('admin_users table not found, trying profiles...');
-        const profileData = await (supabase as any)
-          .from('profiles')
-          .select('*')
-          .eq('username', username.trim())
-          .eq('password', password.trim())
-          .single();
+      // Simple authentication with local users
+      const users = [
+        { username: 'admin', password: 'admin', role: 'admin', fullName: 'Admin User' },
+        { username: 'demo', password: 'demo', role: 'admin', fullName: 'Demo User' },
+        { username: 'seller', password: 'seller', role: 'seller', fullName: 'Seller User' },
+      ];
+      
+      const foundUser = users.find(
+        u => u.username.toLowerCase() === username.trim().toLowerCase() && 
+             u.password === password.trim()
+      );
+      
+      if (foundUser) {
+        const userData = {
+          id: `${foundUser.username}-${Date.now()}`,
+          username: foundUser.username,
+          role: foundUser.role as 'admin' | 'seller' | 'accountant',
+          fullName: foundUser.fullName
+        };
         
-        data = profileData.data;
-        error = profileData.error;
-      }
-
-      console.log('Database response:', { data, error });
-
-      if (error || !data) {
-        console.log('Authentication failed:', error);
-        showMessage("Invalid username or password", 'error');
+        setUser(userData);
+        
+        toast({
+          title: "Welcome!",
+          description: `Signed in as ${foundUser.fullName}`,
+        });
+        
+        navigate('/');
+        return;
+      } else {
+        showMessage("Invalid credentials. Try: admin/admin, demo/demo, or seller/seller", 'error');
         return;
       }
-
-      console.log('Authentication successful:', data);
-      
-      // Create user data object
-      const userData = {
-        id: (data.id || data.Login_id).toString(),
-        username: data.username,
-        role: data.role || 'admin',
-        fullName: data.full_name
-      };
-      
-      // Update auth context (this also updates localStorage)
-      setUser(userData);
-      
-      toast({
-        title: "Welcome back!",
-        description: `Signed in as ${data.full_name || data.username}`,
-      });
-      
-      // Navigate to home
-      navigate('/');
     } catch (error: any) {
       console.error('Login error:', error);
       showMessage("An error occurred during sign in. Please try again.", 'error');
@@ -115,32 +105,35 @@ const AuthNew: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary/20">
-        <div className="text-center">
-          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4">
-            <Package className="w-6 h-6 text-primary-foreground animate-pulse" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary/10">
+        <div className="text-center space-y-4">
+          <div className="relative w-16 h-16 mx-auto">
+            <div className="absolute inset-0 bg-primary/20 rounded-2xl animate-pulse" />
+            <div className="absolute inset-2 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-xl">
+              <Package className="w-8 h-8 text-primary-foreground drop-shadow-sm" />
+            </div>
           </div>
-          <h2 className="text-lg font-semibold">Loading...</h2>
+          <h2 className="text-lg font-semibold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">Loading...</h2>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-secondary/20 p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-secondary/10 p-4">
+      <div className="w-full max-w-md space-y-6 animate-fade-in">
         {/* Header */}
-        <div className="text-center mb-6">
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center mr-3">
-              <Package className="w-6 h-6 text-primary-foreground" />
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center gap-3">
+            <div className="w-14 h-14 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-lg">
+              <Package className="w-7 h-7 text-primary-foreground drop-shadow-sm" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold">JNK GENERAL TRADING LLC</h1>
-              <p className="text-sm text-muted-foreground">Sales Management System</p>
+            <div className="text-left">
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">JNK GENERAL TRADING LLC</h1>
+              <p className="text-sm text-muted-foreground font-medium">Sales Management System</p>
             </div>
           </div>
-          <Badge variant="outline" className="mb-4">
+          <Badge variant="outline" className="px-3 py-1 font-semibold border-primary/30 bg-primary/5">
             Admin Access Portal
           </Badge>
         </div>
@@ -156,13 +149,13 @@ const AuthNew: React.FC = () => {
         )}
 
         {/* Auth Form */}
-        <Card className="shadow-lg">
-          <CardHeader className="text-center">
-            <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4">
-              <Package className="w-8 h-8 text-primary-foreground" />
+        <Card className="shadow-xl border-border/60 bg-card/95 backdrop-blur-sm">
+          <CardHeader className="text-center space-y-3">
+            <div className="w-16 h-16 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center mx-auto shadow-lg">
+              <Lock className="w-8 h-8 text-primary-foreground drop-shadow-sm" />
             </div>
-            <CardTitle className="text-2xl">Admin Sign In</CardTitle>
-            <p className="text-muted-foreground">Enter your credentials to access the system</p>
+            <CardTitle className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/80 bg-clip-text text-transparent">Admin Sign In</CardTitle>
+            <p className="text-muted-foreground font-medium">Enter your credentials to access the system</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -214,12 +207,55 @@ const AuthNew: React.FC = () => {
               {isLoading ? "Signing In..." : "Sign In"}
             </Button>
 
+            {/* Quick Login Buttons */}
+            <div className="space-y-2 pt-2 border-t">
+              <p className="text-xs text-muted-foreground text-center">Quick Login Options:</p>
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setUsername("admin");
+                    setPassword("admin");
+                  }}
+                  className="text-xs"
+                >
+                  Admin
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setUsername("demo");
+                    setPassword("demo");
+                  }}
+                  className="text-xs"
+                >
+                  Demo
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setUsername("seller");
+                    setPassword("seller");
+                  }}
+                  className="text-xs"
+                >
+                  Seller
+                </Button>
+              </div>
+            </div>
+
           </CardContent>
         </Card>
 
         {/* Footer */}
-        <div className="text-center mt-6 text-sm text-muted-foreground">
-          <p>© 2025 JNK GENERAL TRADING LLC. All rights reserved.</p>
+        <div className="text-center text-sm text-muted-foreground font-medium">
+          <p>© {new Date().getFullYear()} JNK GENERAL TRADING LLC. All rights reserved.</p>
         </div>
       </div>
     </div>

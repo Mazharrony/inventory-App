@@ -352,7 +352,7 @@ export default function InventoryPurchaseOrder({ onOrderComplete }: { onOrderCom
             <div className="flex justify-between items-center">
               <Label htmlFor="product-search">Search Product</Label>
               <span className="text-xs text-muted-foreground">
-                💡 Tip: Add multiple products - search, select qty, click "Add to Order", repeat
+                Tip: Add multiple products - search, select qty, click "Add to Order", repeat
               </span>
             </div>
             <div className="relative">

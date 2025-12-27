@@ -18,7 +18,6 @@ interface SimpleAuthContextType {
   isLoading: boolean;
   signOut: () => void;
   setUser: (user: SimpleUser) => void;
-  hasSupabaseConfig: boolean;
 }
 
 const SimpleAuthContext = createContext<SimpleAuthContextType | undefined>(undefined);
@@ -38,7 +37,6 @@ interface SimpleAuthProviderProps {
 export const SimpleAuthProvider = ({ children }: SimpleAuthProviderProps) => {
   const [user, setUser] = useState<SimpleUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [hasSupabaseConfig, setHasSupabaseConfig] = useState(true);
 
   useEffect(() => {
     // Check if user is stored in localStorage
@@ -51,20 +49,6 @@ export const SimpleAuthProvider = ({ children }: SimpleAuthProviderProps) => {
         console.error('Error parsing stored user data:', error);
         localStorage.removeItem('jnk_user');
       }
-    }
-    
-    // Check if Supabase is configured
-    try {
-      const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-      const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_KEY;
-      
-      if (!supabaseUrl || !supabaseKey || supabaseUrl.includes('your_') || supabaseKey.includes('your_')) {
-        console.warn('Supabase not configured. Using demo mode.');
-        setHasSupabaseConfig(false);
-      }
-    } catch (error) {
-      console.warn('Could not check Supabase config. Using demo mode.');
-      setHasSupabaseConfig(false);
     }
     
     setIsLoading(false);
@@ -89,7 +73,6 @@ export const SimpleAuthProvider = ({ children }: SimpleAuthProviderProps) => {
     isLoading,
     signOut,
     setUser: setUserData,
-    hasSupabaseConfig,
   };
 
   return (

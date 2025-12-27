@@ -9,7 +9,7 @@
 ╚══════════════════════════════════════════════════════════════════╝
 */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/client";
 import { ChevronLeft, ChevronRight, Download, Calendar, Eye, BarChart3, Users, Undo2, TrendingUp, Shield, History, UserCheck, RefreshCw, Package, Edit } from "lucide-react";
@@ -25,11 +25,17 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/SimpleAuthContext";
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, subDays, subMonths } from "date-fns";
 import SalesLogTable from "@/components/SalesLogTable";
 import * as XLSX from 'xlsx';
 import { Tables } from "@/integrations/types";
 import { UndoSaleDetailsModal } from "@/components/UndoSaleDetailsModal";
+import { RevenueTrendChart } from "@/components/analytics/RevenueTrendChart";
+import { TopProductsChart } from "@/components/analytics/TopProductsChart";
+import { PaymentMethodChart } from "@/components/analytics/PaymentMethodChart";
+import { TrendIndicator } from "@/components/analytics/TrendIndicator";
+import { SellerPerformanceChart } from "@/components/analytics/SellerPerformanceChart";
+import { StockMovementChart } from "@/components/analytics/StockMovementChart";
 
 type Sale = {
   id: string;
@@ -623,6 +629,7 @@ const Analytics = () => {
     }
   });
 
+  // Calculate current period metrics
   const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.price * sale.quantity, 0);
   const totalItemsSold = filteredSales.reduce((sum, sale) => sum + sale.quantity, 0);
   
@@ -634,12 +641,62 @@ const Analytics = () => {
   );
   const totalTransactions = uniqueTransactions.size;
   
+  // Calculate previous period for comparison
+  const previousPeriodSales = useMemo(() => {
+    return sales.filter((sale) => {
+      const saleDate = new Date(sale.created_at);
+      
+      if (dateFilterMode === 'last30days') {
+        const now = new Date();
+        const sixtyDaysAgo = subDays(now, 60);
+        const thirtyDaysAgo = subDays(now, 30);
+        return saleDate >= sixtyDaysAgo && saleDate < thirtyDaysAgo;
+      } else {
+        // Previous month
+        const prevMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        const prevYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        return saleDate.getMonth() === prevMonth && saleDate.getFullYear() === prevYear;
+      }
+    });
+  }, [sales, dateFilterMode, selectedMonth, selectedYear]);
+  
+  const previousRevenue = previousPeriodSales.reduce((sum, sale) => sum + sale.price * sale.quantity, 0);
+  const previousItemsSold = previousPeriodSales.reduce((sum, sale) => sum + sale.quantity, 0);
+  const previousTransactions = new Set(
+    previousPeriodSales
+      .map(sale => sale.invoice_number || sale.created_at)
+      .filter(Boolean)
+  ).size;
+  
+  // Get date range for charts
+  const dateRange = useMemo(() => {
+    if (dateFilterMode === 'last30days') {
+      const now = new Date();
+      const thirtyDaysAgo = subDays(now, 30);
+      return { start: thirtyDaysAgo, end: now };
+    } else {
+      const monthStart = new Date(selectedYear, selectedMonth, 1);
+      const monthEnd = new Date(selectedYear, selectedMonth + 1, 0);
+      return { start: monthStart, end: monthEnd };
+    }
+  }, [dateFilterMode, selectedMonth, selectedYear]);
+  
   // Get display label for current filter
   const getDateRangeLabel = () => {
     if (dateFilterMode === 'last30days') {
       return 'Last 30 days';
     } else {
       return format(new Date(selectedYear, selectedMonth), "MMMM yyyy");
+    }
+  };
+  
+  const getPreviousPeriodLabel = () => {
+    if (dateFilterMode === 'last30days') {
+      return 'Previous 30 days';
+    } else {
+      const prevMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+      const prevYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+      return format(new Date(prevYear, prevMonth), "MMMM yyyy");
     }
   };
 
@@ -814,9 +871,15 @@ const Analytics = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">AED {totalRevenue.toFixed(2)}</div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground mb-2">
                     {getDateRangeLabel()}
                   </p>
+                  <TrendIndicator 
+                    current={totalRevenue} 
+                    previous={previousRevenue}
+                    label={getPreviousPeriodLabel()}
+                    formatValue={(val) => `AED ${val.toFixed(2)}`}
+                  />
                 </CardContent>
               </Card>
               <Card>
@@ -826,9 +889,14 @@ const Analytics = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{totalItemsSold}</div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground mb-2">
                     Total units
                   </p>
+                  <TrendIndicator 
+                    current={totalItemsSold} 
+                    previous={previousItemsSold}
+                    label={getPreviousPeriodLabel()}
+                  />
                 </CardContent>
               </Card>
               <Card>
@@ -838,11 +906,25 @@ const Analytics = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{totalTransactions}</div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground mb-2">
                     Total sales
                   </p>
+                  <TrendIndicator 
+                    current={totalTransactions} 
+                    previous={previousTransactions}
+                    label={getPreviousPeriodLabel()}
+                  />
                 </CardContent>
               </Card>
+            </div>
+            
+            {/* Charts Section */}
+            <div className="space-y-6 mb-6">
+              <div className="grid gap-6 md:grid-cols-2">
+                <RevenueTrendChart sales={filteredSales} dateRange={dateRange} />
+                <TopProductsChart sales={filteredSales} limit={5} />
+              </div>
+              <PaymentMethodChart sales={filteredSales} />
             </div>
             <SalesLogTable 
               refreshTrigger={refreshTrigger}
@@ -1048,7 +1130,7 @@ const Analytics = () => {
               </CardHeader>
               <CardContent>
                 {/* Filters */}
-                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                <div className="flex flex-col sm:flex-row gap-3 mb-6">
                   <Input
                     placeholder="Search by product name..."
                     value={movementSearchTerm}
@@ -1118,6 +1200,16 @@ const Analytics = () => {
                   </Card>
                 </div>
 
+                {/* Stock Movement Chart */}
+                {filteredMovements.length > 0 && (
+                  <div className="mb-6">
+                    <StockMovementChart 
+                      movements={filteredMovements} 
+                      dateRange={dateRange}
+                    />
+                  </div>
+                )}
+
                 {/* Stock Movements Table */}
                 <div className="rounded-md border overflow-x-auto">
                   <Table>
@@ -1146,7 +1238,7 @@ const Analytics = () => {
                           <TableRow key={movement.id}>
                             <TableCell className="font-medium">{movement.product_name}</TableCell>
                             <TableCell className="text-center">
-                              <Badge variant="default" className="bg-green-600">
+                              <Badge variant="default" className="bg-gray-700">
                                 +{movement.quantity_added} pcs
                               </Badge>
                             </TableCell>
@@ -1179,9 +1271,69 @@ const Analytics = () => {
 
           {/* Tab 4: Sellers Log */}
           <TabsContent value="sellers" className="space-y-6">
+            {/* Seller Summary Cards */}
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Sellers</CardTitle>
+                  <UserCheck className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{sellerStats.length}</div>
+                  <p className="text-xs text-muted-foreground">Active sellers</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {sellerStats.reduce((sum, s) => sum + s.total_sales, 0)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">All transactions</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    AED {sellerStats.reduce((sum, s) => sum + s.total_revenue, 0).toFixed(2)}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Combined revenue</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Avg per Seller</CardTitle>
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    AED {sellerStats.length > 0 
+                      ? (sellerStats.reduce((sum, s) => sum + s.total_revenue, 0) / sellerStats.length).toFixed(2)
+                      : '0.00'}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Average revenue</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Seller Performance Charts */}
+            {sellerStats.length > 0 && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <SellerPerformanceChart sellerStats={sellerStats} metric="revenue" />
+                <SellerPerformanceChart sellerStats={sellerStats} metric="sales" />
+              </div>
+            )}
+
             <Card>
               <CardHeader>
-                <CardTitle>Seller Performance</CardTitle>
+                <CardTitle>Seller Performance Details</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   Track individual seller statistics and performance metrics
                 </p>
@@ -1231,71 +1383,59 @@ const Analytics = () => {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
 
-            {/* Seller Comparison Chart */}
-            <div className="grid gap-4 md:grid-cols-2">
+          {/* Tab 5: System Analytics */}
+          <TabsContent value="analytics" className="space-y-6">
+            {/* System Analytics Summary Cards */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Top Performers by Revenue</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Undos</CardTitle>
+                  <Undo2 className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {sellerStats.slice(0, 5).map((stat, index) => (
-                      <div key={stat.seller_name} className="flex items-center gap-4">
-                        <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground font-bold">
-                          {index + 1}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-medium">{stat.seller_name}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {stat.total_sales} sales
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold">AED {stat.total_revenue.toFixed(2)}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <div className="text-2xl font-bold">{undoLogs.length}</div>
+                  <p className="text-xs text-muted-foreground">All time</p>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg">Seller Activity Summary</CardTitle>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Invoice Edits</CardTitle>
+                  <Edit className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <span className="text-sm font-medium">Total Sellers</span>
-                      <span className="text-lg font-bold">{sellerStats.length}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <span className="text-sm font-medium">Total Sales</span>
-                      <span className="text-lg font-bold">
-                        {sellerStats.reduce((sum, s) => sum + s.total_sales, 0)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <span className="text-sm font-medium">Total Revenue</span>
-                      <span className="text-lg font-bold">
-                        AED {sellerStats.reduce((sum, s) => sum + s.total_revenue, 0).toFixed(2)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
-                      <span className="text-sm font-medium">Total Undos</span>
-                      <span className="text-lg font-bold">
-                        {sellerStats.reduce((sum, s) => sum + s.undo_count, 0)}
-                      </span>
-                    </div>
+                  <div className="text-2xl font-bold">{invoiceEditLogs.length}</div>
+                  <p className="text-xs text-muted-foreground">All time edits</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Restored Inventory</CardTitle>
+                  <Shield className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {undoLogs.filter(log => log.sale_data?.inventory_restored).length}
                   </div>
+                  <p className="text-xs text-muted-foreground">Successfully restored</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{customers.length}</div>
+                  <p className="text-xs text-muted-foreground">Registered customers</p>
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
 
-          {/* Tab 4: System Analytics */}
-          <TabsContent value="analytics" className="space-y-6">
             {/* Undo Logs & Invoice Edit Logs Section */}
             <Card>
               <CardHeader>
@@ -1419,7 +1559,7 @@ const Analytics = () => {
                                 </TableCell>
                                 <TableCell>
                                   <div className="flex items-center gap-2">
-                                    <Badge variant="default" className="bg-blue-100 text-blue-800 border-blue-300">
+                                    <Badge variant="default" className="bg-gray-200 text-gray-800 border-gray-300">
                                       Logged
                                     </Badge>
                                   </div>
@@ -1516,7 +1656,7 @@ const Analytics = () => {
                                   </div>
                                 </TableCell>
                                 <TableCell>
-                                  <Badge variant="default" className="bg-green-100 text-green-800 border-green-300">
+                                  <Badge variant="default" className="bg-gray-200 text-gray-800 border-gray-300">
                                     Edited
                                   </Badge>
                                 </TableCell>
@@ -1607,42 +1747,7 @@ const Analytics = () => {
               </Card>
             </div>
 
-            {/* Payment Method Breakdown */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Payment Method Distribution</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {(() => {
-                    const paymentMethods = filteredSales.reduce((acc, sale) => {
-                      const method = sale.payment_method || 'cash';
-                      if (!acc[method]) {
-                        acc[method] = { count: 0, total: 0 };
-                      }
-                      acc[method].count += 1;
-                      acc[method].total += sale.price * sale.quantity;
-                      return acc;
-                    }, {} as Record<string, { count: number; total: number }>);
-
-                    return Object.entries(paymentMethods).map(([method, data]) => (
-                      <div key={method} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <div className="font-medium capitalize">{method}</div>
-                          <div className="text-sm text-muted-foreground">{data.count} transactions</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold">AED {data.total.toFixed(2)}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {((data.total / totalRevenue) * 100).toFixed(1)}%
-                          </div>
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </CardContent>
-            </Card>
+            {/* Payment Method Breakdown - Now using chart component above */}
           </TabsContent>
         </Tabs>
       </main>

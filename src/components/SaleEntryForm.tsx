@@ -742,7 +742,7 @@ const SaleEntryForm = ({ onSaleAdded }: SaleEntryFormProps) => {
                     setTimeout(() => setShowProductSuggestions(false), 200);
                   }}
                   disabled={!!product}
-                  className={`bg-muted border-border focus:ring-2 focus:ring-primary/20 h-10 ${product ? "bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800" : ""}`}
+                  className={`bg-muted border-border focus:ring-2 focus:ring-primary/20 h-10 ${product ? "bg-gray-100 border-gray-300 dark:bg-gray-900 dark:border-gray-700" : ""}`}
                 />
 
                 {/* Clear product button */}
@@ -876,9 +876,9 @@ const SaleEntryForm = ({ onSaleAdded }: SaleEntryFormProps) => {
 
           {/* Product Status Alerts */}
           {product && (
-            <Alert className="border-green-200 bg-green-50 dark:bg-green-950 dark:border-green-800">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800 dark:text-green-200">
+            <Alert className="border-gray-300 bg-gray-100 dark:bg-gray-900 dark:border-gray-700">
+              <CheckCircle className="h-4 w-4 text-gray-700" />
+              <AlertDescription className="text-gray-800 dark:text-gray-200">
                 <strong>Product Found:</strong> {product.name} - AED {product.price}
                 <br />
                 <span className="text-sm">Stock: {product.stock} units available</span>
@@ -887,9 +887,9 @@ const SaleEntryForm = ({ onSaleAdded }: SaleEntryFormProps) => {
           )}
 
           {productNotFound && upc.trim() && (
-            <Alert className="border-orange-200 bg-orange-50 dark:bg-orange-950 dark:border-orange-800">
-              <AlertTriangle className="h-4 w-4 text-orange-600" />
-              <AlertDescription className="text-orange-800 dark:text-orange-200">
+            <Alert className="border-gray-400 bg-gray-200 dark:bg-gray-800 dark:border-gray-600">
+              <AlertTriangle className="h-4 w-4 text-gray-700" />
+              <AlertDescription className="text-gray-900 dark:text-gray-100">
                 <strong>Product Not Found:</strong> UPC "{upc}" not in inventory.
                 You can still proceed with manual entry by filling in the product name and price.
               </AlertDescription>

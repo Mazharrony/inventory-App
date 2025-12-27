@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, Search, Undo2, Eye, AlertCircle } from "lucide-react";
+import { Download, Search, Undo2, Eye, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/SimpleAuthContext";
+import { logger } from "@/lib/logger";
 import { format, isToday } from "date-fns";
 import { ViewInvoiceModal } from "./ViewInvoiceModal";
 import { Tables, TablesInsert } from "@/integrations/types";
@@ -41,7 +42,6 @@ type SalesLogTableProps = {
 };
 
 const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) => {
-  console.log(' SalesLogTable component rendered at', new Date().toLocaleTimeString());
   const [sales, setSales] = useState<Sale[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -61,93 +61,42 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
   const [undoReason, setUndoReason] = useState("");
   const [undoReasonCategory, setUndoReasonCategory] = useState("customer_return");
   const [undoDetails, setUndoDetails] = useState("");
-  const [showDemoSalesWarning, setShowDemoSalesWarning] = useState(false);
-  const [supabaseError, setSupabaseError] = useState<string | null>(null);
   const [showNoData, setShowNoData] = useState(false);
   const { toast } = useToast();
-  const { user: currentUser, isSeller, isAdmin, isAccountant, hasSupabaseConfig } = useAuth();
+  const { user: currentUser, isSeller, isAdmin, isAccountant } = useAuth();
 
-  // Debug log for auth state
+  // Log auth state changes in development
   useEffect(() => {
-    console.log(' SalesLogTable Auth State:', {
-      currentUser,
+    logger.debug('SalesLogTable auth state', {
+      currentUser: currentUser?.username,
       userRole: currentUser?.role,
       isSeller,
       isAdmin,
       isAccountant
-    });
+    }, 'SalesLogTable');
   }, [currentUser, isSeller, isAdmin, isAccountant]);
 
-  // Fallback demo sales
-  const demoSales = [
-    {
-      id: 'demo-sale-1',
-      transaction_id: 'demo-tx-1',
-      created_at: new Date().toISOString(),
-      seller_name: 'Demo Seller',
-      payment_method: 'cash',
-      product_name: 'Demo Whey Protein',
-      price: 99,
-      quantity: 2,
-      customer_name: 'Demo Customer',
-      customer_mobile: '0500000000',
-      customer_address: 'Demo Address',
-      invoice_number: 'INV-DEMO-001',
-      invoice_type: 'retail',
-    },
-    {
-      id: 'demo-sale-2',
-      transaction_id: 'demo-tx-2',
-      created_at: new Date().toISOString(),
-      seller_name: 'Demo Seller',
-      payment_method: 'card',
-      product_name: 'Demo Creatine',
-      price: 49,
-      quantity: 1,
-      customer_name: 'Demo Customer',
-      customer_mobile: '0500000000',
-      customer_address: 'Demo Address',
-      invoice_number: 'INV-DEMO-002',
-      invoice_type: 'retail',
-    },
-  ];
-
   useEffect(() => {
-    const fetchSalesWithFallback = async () => {
-      // If Supabase isn't configured, stay in demo mode and surface a clear message.
-      if (!hasSupabaseConfig) {
-        setSupabaseError('Supabase environment variables are missing.');
-        setSales(demoSales);
-        setShowDemoSalesWarning(true);
-        setShowNoData(false);
-        return;
-      }
-
+    const fetchSales = async () => {
       const { data, error } = await supabase.from('sales').select('*').order('created_at', { ascending: false });
 
       if (error) {
-        setSupabaseError(error.message);
-        setSales(demoSales);
-        setShowDemoSalesWarning(true);
+        logger.error('Error fetching sales', error, 'SalesLogTable');
+        setSales([]);
         setShowNoData(false);
         return;
       }
 
-      setSupabaseError(null);
-
       if (data && data.length > 0) {
         setSales(data);
-        setShowDemoSalesWarning(false);
         setShowNoData(false);
       } else {
-        // Connected successfully but no rows found—show an empty-state notice instead of demo data.
         setSales([]);
-        setShowDemoSalesWarning(false);
         setShowNoData(true);
       }
     };
-    fetchSalesWithFallback();
-  }, [refreshTrigger, hasSupabaseConfig]);
+    fetchSales();
+  }, [refreshTrigger]);
 
   useEffect(() => {
     if (sales.length > 0) {
@@ -166,7 +115,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
       .order("created_at", { ascending: false });
 
     if (!error && data) {
-      console.log('SalesLogTable - Fetched sales:', data.length);
+      logger.debug('Fetched sales', { count: data.length }, 'SalesLogTable');
       setSales(data as unknown as Sale[]);
     }
   };
@@ -175,7 +124,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
     // Group sales by transaction_id, or by timestamp+seller if transaction_id doesn't exist
     const transactionMap = new Map<string, Transaction>();
 
-    console.log('Processing transactions from', sales.length, 'sales');
+    logger.debug('Processing transactions', { salesCount: sales.length }, 'SalesLogTable');
 
     sales.forEach(sale => {
       // Use transaction_id if available, otherwise group by time window (5 minute window) + seller
@@ -209,13 +158,13 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
           order_comment: sale.order_comment || null,
         });
 
-        // Debug log for customer data
+        // Log customer data in development
         if (sale.customer_name) {
-          console.log('Transaction created with customer:', {
+          logger.debug('Transaction created with customer', {
             txId,
             customer_name: sale.customer_name,
             customer_mobile: sale.customer_mobile,
-          });
+          }, 'SalesLogTable');
         }
       }
 
@@ -264,7 +213,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
     const transactionList = Array.from(transactionMap.values())
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    console.log('Processed into', transactionList.length, 'transactions');
+    logger.debug('Processed transactions', { count: transactionList.length }, 'SalesLogTable');
     setTransactions(transactionList);
 
     // Set last three transactions for undo functionality
@@ -339,7 +288,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
   };
 
   const deactivateTransaction = async (transactionId: string, reason: string) => {
-    console.log("Starting deactivation for transaction:", transactionId);
+    logger.debug("Starting deactivation for transaction", { transactionId }, 'SalesLogTable');
 
     // Find all sales in this transaction
     const transactionSales = sales.filter(sale => {
@@ -372,7 +321,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
           .eq("id" as never, sale.id as any)) as { error: any };
 
         if (deleteError) {
-          console.error("Error deleting sale:", deleteError);
+          logger.error("Error deleting sale", deleteError, 'SalesLogTable');
           toast({
             title: "Error",
             description: deleteError.message,
@@ -382,7 +331,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
         }
       }
 
-      console.log("All sales in transaction deleted successfully");
+      logger.debug("All sales in transaction deleted successfully", { transactionId }, 'SalesLogTable');
 
       // Get current user for undo log
       const { data: { user } } = await supabase.auth.getUser();
@@ -434,21 +383,20 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
               inventoryRestored = true;
               // Track inventory restoration (type assertion for extra property)
               (undoLogEntry.sale_data as any).inventory_restored = true;
-              console.log(`Restored ${sale.quantity} units to product ${product.name}`);
+              logger.debug(`Restored inventory`, { quantity: sale.quantity, productName: product.name }, 'SalesLogTable');
             }
           }
         }
 
         // Save the undo log entry to database
-        console.log('Attempting to save undo log:', undoLogEntry);
+        logger.debug('Attempting to save undo log', { saleId: undoLogEntry.sale_id }, 'SalesLogTable');
 
         const { error: logError } = await supabase
           .from("sales_undo_log")
           .insert(undoLogEntry as any);
 
         if (logError) {
-          console.error('Error saving undo log to database:', logError);
-          console.error('Error details:', JSON.stringify(logError, null, 2));
+          logger.error('Error saving undo log to database', logError, 'SalesLogTable');
 
           // Fallback to localStorage with new structure
           const localLogEntry = {
@@ -461,9 +409,9 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
           const recentLogs = existingLogs.slice(0, 50);
           localStorage.setItem('undo_logs', JSON.stringify(recentLogs));
 
-          console.log('Saved undo log to localStorage as fallback:', localLogEntry);
+          logger.debug('Saved undo log to localStorage as fallback', { saleId: undoLogEntry.sale_id }, 'SalesLogTable');
         } else {
-          console.log('Undo log saved to database successfully:', undoLogEntry);
+          logger.debug('Undo log saved to database successfully', { saleId: undoLogEntry.sale_id }, 'SalesLogTable');
         }
       }
 
@@ -479,7 +427,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
       onSalesChange();
 
     } catch (error) {
-      console.error('Transaction undo error:', error);
+      logger.error('Transaction undo error', error, 'SalesLogTable');
       toast({
         title: "Error",
         description: "Failed to undo transaction",
@@ -608,7 +556,7 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
       item.status === 'active' || item.status === null || item.status === undefined
     );
 
-    console.log('Undo button check:', {
+    logger.debug('Undo button check', {
       invoice: transaction.invoice_number,
       transaction_id: transaction.transaction_id.slice(-8),
       transactionDate: transactionDate.toISOString(),
@@ -634,19 +582,9 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
 
   return (
     <>
-      {supabaseError && (
-        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-4">
-          <strong>Supabase error:</strong> {supabaseError} — showing demo sales.
-        </div>
-      )}
-      {showDemoSalesWarning && !supabaseError && (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
-          <strong>Warning:</strong> Supabase is not reachable or not configured. Showing demo sales.
-        </div>
-      )}
       {showNoData && (
         <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-4">
-          <strong>No sales found:</strong> Connected to Supabase but no sales are in the database.
+          <strong>No sales found:</strong> No sales records in the database.
         </div>
       )}
       <Card className="bg-card border border-border shadow-sm rounded-lg">
@@ -784,10 +722,10 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
                       </TableCell>
                       <TableCell className="px-4 py-3 text-sm capitalize">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          transaction.payment_method === 'cash' ? 'text-green-700' :
-                          transaction.payment_method === 'card' ? 'text-blue-700' :
-                          transaction.payment_method === 'bank_transfer' ? 'text-purple-700' :
-                          transaction.payment_method === 'due' ? 'text-orange-700' : 'text-gray-700'
+                          transaction.payment_method === 'cash' ? 'text-gray-700' :
+                          transaction.payment_method === 'card' ? 'text-gray-600' :
+                          transaction.payment_method === 'bank_transfer' ? 'text-gray-800' :
+                          transaction.payment_method === 'due' ? 'text-gray-900' : 'text-gray-700'
                         }`}>
                           {transaction.payment_method}
                         </span>
@@ -809,13 +747,6 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
                           {(() => {
                             const canUndo = canUndoTransaction(transaction, index);
                             const showButton = (isAdmin || isAccountant) && canUndo;
-                            console.log('🔘 RENDER CHECK for invoice', transaction.invoice_number, {
-                              isAdmin,
-                              isAccountant,
-                              canUndo,
-                              showButton,
-                              timestamp: new Date().toISOString()
-                            });
                             return showButton ? (
                               <Button
                                 variant="outline"
@@ -882,10 +813,10 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
                       <div className="flex items-center gap-2 text-sm">
                         <span className="text-muted-foreground min-w-[70px]">Payment:</span>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${
-                          transaction.payment_method === 'cash' ? 'bg-green-100 text-green-700' :
-                          transaction.payment_method === 'card' ? 'bg-blue-100 text-blue-700' :
-                          transaction.payment_method === 'bank_transfer' ? 'bg-purple-100 text-purple-700' :
-                          transaction.payment_method === 'due' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-700'
+                          transaction.payment_method === 'cash' ? 'bg-gray-100 text-gray-700' :
+                          transaction.payment_method === 'card' ? 'bg-gray-200 text-gray-800' :
+                          transaction.payment_method === 'bank_transfer' ? 'bg-gray-300 text-gray-900' :
+                          transaction.payment_method === 'due' ? 'bg-gray-400 text-gray-900' : 'bg-gray-100 text-gray-700'
                         }`}>
                           {transaction.payment_method}
                         </span>
@@ -920,26 +851,143 @@ const SalesLogTable = ({ refreshTrigger, onSalesChange }: SalesLogTableProps) =>
           </div>
 
           {/* Pagination */}
-          {filteredTransactions.length > itemsPerPage && (
-            <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-between items-center gap-3">
-              <div className="text-xs sm:text-sm text-muted-foreground">
-                Showing {filteredTransactions.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredTransactions.length)} of {filteredTransactions.length}
-              </div>
-              <div className="flex gap-1 flex-wrap justify-center">
-                {Array.from({ length: Math.ceil(filteredTransactions.length / itemsPerPage) }, (_, i) => i + 1).map((page) => (
+          {filteredTransactions.length > itemsPerPage && (() => {
+            const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+            const startItem = filteredTransactions.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+            const endItem = Math.min(currentPage * itemsPerPage, filteredTransactions.length);
+            
+            // Calculate page window (show max 7 pages)
+            const getPageNumbers = () => {
+              const pages: (number | string)[] = [];
+              const maxVisible = 7;
+              
+              if (totalPages <= maxVisible) {
+                // Show all pages if total is less than max visible
+                for (let i = 1; i <= totalPages; i++) {
+                  pages.push(i);
+                }
+              } else {
+                // Always show first page
+                pages.push(1);
+                
+                if (currentPage <= 4) {
+                  // Near the beginning: show 1, 2, 3, 4, 5, ..., last
+                  for (let i = 2; i <= 5; i++) {
+                    pages.push(i);
+                  }
+                  pages.push('ellipsis-end');
+                  pages.push(totalPages);
+                } else if (currentPage >= totalPages - 3) {
+                  // Near the end: show 1, ..., last-4, last-3, last-2, last-1, last
+                  pages.push('ellipsis-start');
+                  for (let i = totalPages - 4; i <= totalPages; i++) {
+                    pages.push(i);
+                  }
+                } else {
+                  // In the middle: show 1, ..., current-1, current, current+1, ..., last
+                  pages.push('ellipsis-start');
+                  for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+                    pages.push(i);
+                  }
+                  pages.push('ellipsis-end');
+                  pages.push(totalPages);
+                }
+              }
+              
+              return pages;
+            };
+
+            const pageNumbers = getPageNumbers();
+
+            return (
+              <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+                <div className="text-xs sm:text-sm text-muted-foreground">
+                  Showing <span className="font-medium text-foreground">{startItem}</span> to <span className="font-medium text-foreground">{endItem}</span> of <span className="font-medium text-foreground">{filteredTransactions.length}</span>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  {/* First Page Button */}
                   <Button
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
+                    variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage(page)}
-                    className="w-8 h-8 p-0 text-xs"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="h-8 w-8 p-0"
+                    title="First page"
                   >
-                    {page}
+                    <ChevronsLeft className="h-4 w-4" />
                   </Button>
-                ))}
+                  
+                  {/* Previous Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="h-8 w-8 p-0"
+                    title="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  
+                  {/* Page Numbers */}
+                  <div className="flex gap-1">
+                    {pageNumbers.map((page, index) => {
+                      if (page === 'ellipsis-start' || page === 'ellipsis-end') {
+                        return (
+                          <span key={`ellipsis-${index}`} className="px-2 py-1 text-muted-foreground">
+                            ...
+                          </span>
+                        );
+                      }
+                      
+                      const pageNum = page as number;
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={currentPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`h-8 min-w-8 px-2 text-xs font-medium ${
+                            currentPage === pageNum 
+                              ? "bg-primary text-primary-foreground" 
+                              : "hover:bg-muted"
+                          }`}
+                          aria-current={currentPage === pageNum ? 'page' : undefined}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Next Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="h-8 w-8 p-0"
+                    title="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  
+                  {/* Last Page Button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="h-8 w-8 p-0"
+                    title="Last page"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </CardContent>
       </Card>
 

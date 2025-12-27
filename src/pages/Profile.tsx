@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
- import { useAuth } from "@/contexts/SimpleAuthContext";
+import { useState, useEffect, useMemo } from "react";
+import { useAuth } from "@/contexts/SimpleAuthContext";
 import { supabase } from "@/integrations/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { 
   User, 
@@ -18,7 +19,12 @@ import {
   CheckCircle, 
   AlertCircle,
   Eye,
-  EyeOff 
+  EyeOff,
+  KeyRound,
+  Calendar,
+  UserCheck,
+  Clock,
+  Save
 } from "lucide-react";
 import {
   Dialog,
@@ -28,6 +34,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { AppHeader } from "@/components/AppHeader";
+import { cn } from "@/lib/utils";
 
 interface UserProfile {
   id: string;
@@ -48,11 +55,14 @@ const avatarOptions = [
   "/avatars/avatar_8.svg"
 ];
 
+// Default demo avatar
+const DEFAULT_AVATAR = "/avatars/avatar_1.svg";
+
 const Profile = () => {
   const { user, userRole, isAdmin } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [fullName, setFullName] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState(DEFAULT_AVATAR);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -62,11 +72,29 @@ const Profile = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [showAvatarDialog, setShowAvatarDialog] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
   const { toast } = useToast();
+
+  // Password strength calculation
+  const passwordStrength = useMemo(() => {
+    if (!newPassword) return { strength: 0, label: '', color: '' };
+    
+    let strength = 0;
+    if (newPassword.length >= 8) strength++;
+    if (newPassword.length >= 12) strength++;
+    if (/[a-z]/.test(newPassword) && /[A-Z]/.test(newPassword)) strength++;
+    if (/\d/.test(newPassword)) strength++;
+    if (/[^a-zA-Z\d]/.test(newPassword)) strength++;
+    
+    if (strength <= 2) return { strength, label: 'Weak', color: 'text-destructive' };
+    if (strength <= 3) return { strength, label: 'Medium', color: 'text-yellow-600 dark:text-yellow-500' };
+    return { strength, label: 'Strong', color: 'text-success' };
+  }, [newPassword]);
 
   const fetchProfile = async (preserveLocalAvatar = false) => {
     if (!user) return;
 
+    setIsProfileLoading(true);
     try {
       console.log('Fetching profile for user:', user);
       
@@ -96,7 +124,8 @@ const Profile = () => {
         setFullName(profileData.full_name || "");
         // Only update avatar from database if we're not preserving local state
         if (!preserveLocalAvatar) {
-          setAvatarUrl(profileData.avatar_url || "");
+          // Use demo avatar if no avatar is set
+          setAvatarUrl(profileData.avatar_url || DEFAULT_AVATAR);
         } else {
           // Keep the local avatar that was just selected
           console.log('Preserving local avatar:', currentLocalAvatar);
@@ -107,13 +136,13 @@ const Profile = () => {
         const basicProfile = {
           id: user.id,
           full_name: user.fullName || user.username,
-          avatar_url: null,
+          avatar_url: DEFAULT_AVATAR,
           updated_at: new Date().toISOString()
         };
         setProfile(basicProfile);
         setFullName(basicProfile.full_name || "");
         if (!preserveLocalAvatar) {
-          setAvatarUrl("");
+          setAvatarUrl(DEFAULT_AVATAR);
         }
       }
     } catch (error) {
@@ -123,6 +152,8 @@ const Profile = () => {
         description: "Failed to load profile",
         variant: "destructive",
       });
+    } finally {
+      setIsProfileLoading(false);
     }
   };
 
@@ -142,18 +173,6 @@ const Profile = () => {
 
     setIsLoading(true);
     try {
-      // First check if Supabase is properly configured
-      const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-      const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_KEY;
-      
-      if (!supabaseUrl || !supabaseKey) {
-        toast({
-          title: "Configuration Error",
-          description: "Supabase is not configured. Running in demo mode.",
-          variant: "destructive",
-        });
-        return;
-      }
 
       const currentAvatarUrl = selectedAvatarUrl || avatarUrl;
 
@@ -363,6 +382,10 @@ const Profile = () => {
   };
 
   useEffect(() => {
+    // Set default avatar immediately if no avatar is set
+    if (!avatarUrl) {
+      setAvatarUrl(DEFAULT_AVATAR);
+    }
     fetchProfile();
     // Auto-attempt to add avatar column if missing
     attemptAddAvatarColumn();
@@ -426,135 +449,202 @@ const Profile = () => {
         icon={<User className="w-6 h-6 text-primary-foreground" />}
       />
 
-      <div className="container mx-auto p-6 max-w-4xl">
+      <div className="container mx-auto px-3 sm:px-4 md:px-6 py-4 sm:py-6 md:py-8 max-w-5xl">
         <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-3">
           {/* Profile Overview */}
-          <Card className="lg:col-span-1">
-            <CardHeader className="text-center">
-              <div className="flex flex-col items-center space-y-4">
-                <div className="relative">
-                  <Avatar className="w-24 h-24">
-                    <AvatarImage src={avatarUrl} alt={fullName || user.username || ""} />
-                    <AvatarFallback className="text-2xl">
-                      {getInitials(fullName)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <Dialog open={showAvatarDialog} onOpenChange={setShowAvatarDialog}>
-                    <DialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        className="absolute -bottom-2 -right-2 rounded-full w-8 h-8 p-0 shadow-lg"
-                        onClick={() => setShowAvatarDialog(true)}
-                      >
-                        <Camera className="w-4 h-4" />
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Choose Your Avatar</DialogTitle>
-                      </DialogHeader>
-                      <div className="grid grid-cols-6 gap-3 p-4">
-                        {avatarOptions.map((avatar, index) => (
-                          <button
-                            key={index}
-                            onClick={() => selectAvatar(avatar)}
-                            className={`relative rounded-lg p-2 transition-all hover:bg-accent ${
-                              avatarUrl === avatar ? 'ring-2 ring-primary bg-accent' : ''
-                            }`}
-                          >
-                            <Avatar className="w-16 h-16">
-                              <AvatarImage src={avatar} alt={`Avatar option ${index + 1}`} />
-                              <AvatarFallback>A{index + 1}</AvatarFallback>
-                            </Avatar>
-                          </button>
-                        ))}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold">{fullName || "Set your name"}</h3>
-                  <p className="text-sm text-muted-foreground">@{user.username}</p>
-                  <div className="flex items-center justify-center gap-2 mt-2">
-                    <Badge variant={isAdmin ? 'destructive' : 'secondary'}>
-                      {isAdmin && <Shield className="w-3 h-3 mr-1" />}
-                      {userRole || 'User'}
-                    </Badge>
-                    <Badge variant="default" className="bg-green-100 text-green-800">
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Active User
-                    </Badge>
+          <Card className="lg:col-span-1 border-border/60 bg-card/95 backdrop-blur-sm shadow-lg">
+            <CardHeader className="text-center pb-4">
+              {isProfileLoading ? (
+                <div className="flex flex-col items-center space-y-4">
+                  <Skeleton className="w-24 h-24 rounded-full" />
+                  <div className="space-y-2 w-full">
+                    <Skeleton className="h-6 w-32 mx-auto" />
+                    <Skeleton className="h-4 w-24 mx-auto" />
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex flex-col items-center space-y-4">
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/10 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    <Avatar className="w-28 h-28 border-4 border-primary/20 shadow-xl relative z-10">
+                      <AvatarImage src={avatarUrl || DEFAULT_AVATAR} alt={fullName || user.username || ""} />
+                      <AvatarFallback className="text-3xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground font-bold">
+                        {getInitials(fullName)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <Dialog open={showAvatarDialog} onOpenChange={setShowAvatarDialog}>
+                      <DialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          className="absolute -bottom-1 -right-1 rounded-full w-10 h-10 p-0 shadow-lg bg-gradient-to-br from-primary to-primary/90 hover:from-primary/90 hover:to-primary border-2 border-background"
+                          onClick={() => setShowAvatarDialog(true)}
+                        >
+                          <Camera className="w-4 h-4" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-3xl">
+                        <DialogHeader>
+                          <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                              <Camera className="w-4 h-4 text-primary-foreground" />
+                            </div>
+                            Choose Your Avatar
+                          </DialogTitle>
+                        </DialogHeader>
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-4 p-4">
+                          {avatarOptions.map((avatar, index) => (
+                            <button
+                              key={index}
+                              onClick={() => selectAvatar(avatar)}
+                              className={cn(
+                                "relative rounded-xl p-3 transition-all duration-200 hover:scale-105 hover:shadow-lg group",
+                                avatarUrl === avatar 
+                                  ? 'ring-2 ring-primary bg-primary/10 shadow-md' 
+                                  : 'hover:bg-accent'
+                              )}
+                            >
+                              <Avatar className="w-16 h-16 mx-auto">
+                                <AvatarImage src={avatar} alt={`Avatar option ${index + 1}`} />
+                                <AvatarFallback>A{index + 1}</AvatarFallback>
+                              </Avatar>
+                              {avatarUrl === avatar && (
+                                <div className="absolute top-1 right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                                  <CheckCircle className="w-3 h-3 text-primary-foreground" />
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                      {fullName || "Set your name"}
+                    </h3>
+                    <p className="text-sm text-muted-foreground font-medium">@{user.username}</p>
+                    <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                      <Badge 
+                        variant={isAdmin ? 'default' : 'secondary'}
+                        className={cn(
+                          "font-semibold px-2.5 py-1",
+                          isAdmin && "bg-primary/10 text-primary border-primary/30"
+                        )}
+                      >
+                        {isAdmin && <Shield className="w-3 h-3 mr-1" />}
+                        {userRole || 'User'}
+                      </Badge>
+                      <Badge variant="outline" className="bg-success/10 text-success border-success/30 font-semibold">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Active
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardHeader>
           </Card>
 
           {/* Profile Settings */}
           <div className="lg:col-span-2 space-y-6">
             {/* Personal Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <User className="w-5 h-5 mr-2" />
+            <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                    <User className="w-4 h-4 text-primary-foreground" />
+                  </div>
                   Personal Information
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="fullName">Full Name</Label>
-                    <Input
-                      id="fullName"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Enter your full name"
-                    />
+                {isProfileLoading ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-32" />
                   </div>
-                  <div>
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input
-                      id="email"
-                      value={user.username || ""}
-                      disabled
-                      className="bg-muted"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="avatar">Avatar</Label>
-                  <div className="flex items-center gap-2">
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="fullName" className="font-semibold">Full Name</Label>
+                        <Input
+                          id="fullName"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="Enter your full name"
+                          className="h-11"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email" className="font-semibold">Username</Label>
+                        <Input
+                          id="email"
+                          value={user.username || ""}
+                          disabled
+                          className="bg-muted/50 h-11"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="avatar" className="font-semibold">Avatar</Label>
+                      <div className="flex items-center gap-3">
+                        <Button 
+                          type="button" 
+                          variant="outline" 
+                          onClick={() => setShowAvatarDialog(true)}
+                          className="gap-2 h-11 hover-lift"
+                        >
+                          <Camera className="w-4 h-4" />
+                          Choose Avatar
+                        </Button>
+                        {avatarUrl && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <CheckCircle className="w-4 h-4 text-success" />
+                            Avatar selected
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Choose from {avatarOptions.length} preset avatars
+                      </p>
+                    </div>
                     <Button 
-                      type="button" 
-                      variant="outline" 
-                      onClick={() => setShowAvatarDialog(true)}
-                      className="gap-2"
+                      onClick={updateProfile} 
+                      disabled={isLoading}
+                      className="bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-md w-full sm:w-auto"
                     >
-                      <Camera className="w-4 h-4" />
-                      Choose Avatar
+                      {isLoading ? (
+                        <>
+                          <Save className="w-4 h-4 mr-2 animate-spin" />
+                          Updating...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4 mr-2" />
+                          Update Profile
+                        </>
+                      )}
                     </Button>
-                  </div>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Choose from {avatarOptions.length} preset avatars
-                  </p>
-                </div>
-                <Button onClick={updateProfile} disabled={isLoading}>
-                  {isLoading ? "Updating..." : "Update Profile"}
-                </Button>
+                  </>
+                )}
               </CardContent>
             </Card>
 
             {/* Security Settings */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Key className="w-5 h-5 mr-2" />
+            <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                    <Key className="w-4 h-4 text-primary-foreground" />
+                  </div>
                   Security Settings
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <Label htmlFor="currentPassword">Current Password</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="currentPassword" className="font-semibold">Current Password</Label>
                   <div className="relative">
                     <Input
                       id="currentPassword"
@@ -563,20 +653,21 @@ const Profile = () => {
                       onChange={(e) => setCurrentPassword(e.target.value)}
                       placeholder="Enter current password"
                       minLength={6}
+                      className="h-11 pr-10"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3"
+                      className="absolute right-1 top-1 h-9 w-9"
                       onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                     >
                       {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </Button>
                   </div>
                 </div>
-                <div>
-                  <Label htmlFor="newPassword">New Password</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword" className="font-semibold">New Password</Label>
                   <div className="relative">
                     <Input
                       id="newPassword"
@@ -585,20 +676,42 @@ const Profile = () => {
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Enter new password"
                       minLength={6}
+                      className="h-11 pr-10"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3"
+                      className="absolute right-1 top-1 h-9 w-9"
                       onClick={() => setShowNewPassword(!showNewPassword)}
                     >
                       {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </Button>
                   </div>
+                  {newPassword && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs">
+                        <KeyRound className={cn("w-3 h-3", passwordStrength.color)} />
+                        <span className={cn("font-medium", passwordStrength.color)}>
+                          Password strength: {passwordStrength.label}
+                        </span>
+                      </div>
+                      <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className={cn(
+                            "h-full transition-all duration-300",
+                            passwordStrength.strength <= 2 && "bg-destructive",
+                            passwordStrength.strength === 3 && "bg-yellow-500",
+                            passwordStrength.strength >= 4 && "bg-success"
+                          )}
+                          style={{ width: `${(passwordStrength.strength / 5) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword" className="font-semibold">Confirm New Password</Label>
                   <div className="relative">
                     <Input
                       id="confirmPassword"
@@ -607,52 +720,132 @@ const Profile = () => {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Confirm new password"
                       minLength={6}
+                      className={cn(
+                        "h-11 pr-10",
+                        confirmPassword && newPassword !== confirmPassword && "border-destructive focus-visible:ring-destructive"
+                      )}
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-0 top-0 h-full px-3"
+                      className="absolute right-1 top-1 h-9 w-9"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     >
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </Button>
                   </div>
+                  {confirmPassword && newPassword && (
+                    <div className="flex items-center gap-2 text-xs">
+                      {newPassword === confirmPassword ? (
+                        <>
+                          <CheckCircle className="w-3 h-3 text-success" />
+                          <span className="text-success font-medium">Passwords match</span>
+                        </>
+                      ) : (
+                        <>
+                          <AlertCircle className="w-3 h-3 text-destructive" />
+                          <span className="text-destructive font-medium">Passwords do not match</span>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <Button 
                   onClick={updatePassword} 
-                  disabled={passwordLoading || !newPassword || !confirmPassword}
-                  variant="secondary"
+                  disabled={passwordLoading || !newPassword || !confirmPassword || newPassword !== confirmPassword}
+                  className="bg-gradient-to-r from-primary to-primary/90 hover:from-primary/90 hover:to-primary shadow-md w-full sm:w-auto"
                 >
-                  {passwordLoading ? "Updating..." : "Update Password"}
+                  {passwordLoading ? (
+                    <>
+                      <Key className="w-4 h-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      <Key className="w-4 h-4 mr-2" />
+                      Update Password
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
 
             {/* Account Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Account Information</CardTitle>
+            <Card className="border-border/60 bg-card/95 backdrop-blur-sm shadow-lg">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+                    <UserCheck className="w-4 h-4 text-primary-foreground" />
+                  </div>
+                  Account Information
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <Label className="text-muted-foreground">Account Created</Label>
-                    <p>User Profile</p>
+              <CardContent>
+                {isProfileLoading ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="space-y-2">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-5 w-32" />
+                      </div>
+                    ))}
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">Last Updated</Label>
-                    <p>{profile ? new Date(profile.updated_at).toLocaleDateString() : "Never"}</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-gradient-to-br from-primary/5 to-transparent rounded-lg border border-primary/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Calendar className="w-4 h-4 text-muted-foreground" />
+                        <Label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Account Created</Label>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {profile?.updated_at ? new Date(profile.updated_at).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        }) : 'User Profile'}
+                      </p>
+                    </div>
+                    <div className="p-4 bg-gradient-to-br from-blue-500/5 to-transparent rounded-lg border border-blue-500/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="w-4 h-4 text-muted-foreground" />
+                        <Label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Last Updated</Label>
+                      </div>
+                      <p className="text-sm font-semibold text-foreground">
+                        {profile ? new Date(profile.updated_at).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        }) : "Never"}
+                      </p>
+                    </div>
+                    <div className="p-4 bg-gradient-to-br from-success/5 to-transparent rounded-lg border border-success/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Shield className="w-4 h-4 text-muted-foreground" />
+                        <Label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Account Role</Label>
+                      </div>
+                      <Badge 
+                        variant="outline"
+                        className={cn(
+                          "font-semibold",
+                          isAdmin && "bg-primary/10 text-primary border-primary/30"
+                        )}
+                      >
+                        {userRole || "User"}
+                      </Badge>
+                    </div>
+                    <div className="p-4 bg-gradient-to-br from-success/5 to-transparent rounded-lg border border-success/10">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CheckCircle className="w-4 h-4 text-muted-foreground" />
+                        <Label className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Account Status</Label>
+                      </div>
+                      <Badge variant="outline" className="bg-success/10 text-success border-success/30 font-semibold">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Active
+                      </Badge>
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">Account Role</Label>
-                    <p className="font-medium">{userRole || "User"}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Account Status</Label>
-                    <p className="text-green-600 font-medium">Active User</p>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>

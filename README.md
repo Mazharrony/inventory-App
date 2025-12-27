@@ -2,18 +2,18 @@
 
 A professional sales and inventory management system built with React, TypeScript, and Supabase
 
-## ✨ Features
+## Features
 
-- 📊 Real-time sales tracking and analytics.
-- 📦 Inventory management
-- 👥 Multi-seller support
-- 📱 Responsive design with mobile support
-- 🔒 Secure authentication
-- 📈 Advanced reporting and charts
-- 💾 Data export/import capabilities
-- 🔄 Undo/Redo functionality
+- Real-time sales tracking and analytics
+- Inventory management
+- Multi-seller support
+- Responsive design with mobile support
+- Secure authentication
+- Advanced reporting and charts
+- Data export/import capabilities
+- Undo/Redo functionality
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -49,7 +49,7 @@ A professional sales and inventory management system built with React, TypeScrip
    http://localhost:8080
    ```
 
-## 📝 Available Scripts
+## Available Scripts
 
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
@@ -57,7 +57,7 @@ A professional sales and inventory management system built with React, TypeScrip
 - `npm run lint` - Run ESLint
 - `npm run deploy` - Deploy to GitHub Pages
 
-## 🏗️ Project Structure
+## Project Structure
 
 ```
 src/
@@ -79,7 +79,7 @@ src/
 └── utils/              # Helper functions
 ```
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 - **Frontend:** React 18, TypeScript
 - **UI:** Tailwind CSS, shadcn/ui, Radix UI
@@ -88,7 +88,7 @@ src/
 - **Build Tool:** Vite
 - **Routing:** React Router DOM
 
-## 🚀 Deployment
+## Deployment
 
 ### GitHub Pages
 ```bash
@@ -101,7 +101,7 @@ npm run build
 # Deploy the `dist` folder to your hosting service
 ```
 
-## 📱 Features Overview
+## Features Overview
 
 ### Dashboard
 - Sales overview and key metrics
@@ -125,7 +125,7 @@ npm run build
 - Performance tracking per seller
 - Commission calculations
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 ```env
@@ -138,20 +138,20 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 2. Run the migration scripts in `supabase/migrations/`
 3. Configure Row Level Security (RLS) policies
 
-## 📄 License
+## License
 
 This project is proprietary software developed for JNK GENERAL TRADING LLC.
 
-## 👨‍💻 Developer
+## Developer
 
 **Mazhar Rony**
 - Email: hello@meetmazhar.site
 - Portfolio: [www.meetmazhar.site](https://www.meetmazhar.site)
 
-## 🆘 Support
+## Support
 
 For technical support or feature requests, please contact the development team.
 
 ---
 
-*"Building tomorrow's business solutions today"* ✨
+*"Building tomorrow's business solutions today"*

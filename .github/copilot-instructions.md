@@ -46,7 +46,7 @@ JNK Nutrition Sales System is a React/TypeScript web application for sales and i
 ### Initial Setup
 ```bash
 npm install
-npm run setup:db  # Runs migrations, sets up kamal@jnknutrition.com as admin
+npm run setup:db  # Runs migrations, sets up hello@meetmazhar.site as admin
 # Create .env.local with VITE_SUPABASE_URL and VITE_SUPABASE_KEY
 npm run dev        # Starts Vite on http://localhost:8080
 ```
@@ -134,7 +134,7 @@ const SaleEntryForm = ({ onSaleAdded }: Props) => {
 
 ## Specific Conventions This Project Uses
 
-1. **Admin Email**: `kamal@jnknutrition.com` is hardcoded as fallback admin check in AuthContext
+1. **Admin Email**: `hello@meetmazhar.site` is hardcoded as fallback admin check in AuthContext
 2. **Payment Methods**: Enum values: "cash" (default), others added via ADD_PAYMENT_METHOD_COLUMN.sql
 3. **Transaction IDs**: UUID format, grouped sales into transactions for invoicing
 4. **Customer TRN**: Optional tax registration number field in sales table

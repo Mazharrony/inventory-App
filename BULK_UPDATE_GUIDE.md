@@ -71,8 +71,8 @@ The system will:
 
 After import, you'll see a summary:
 -  **Updated:** Number of successfully updated products
-- ⚠️ **Skipped:** Rows with validation errors or missing identifiers
-- 🔍 **Not Found:** Product IDs that don't exist in the database
+- **Skipped:** Rows with validation errors or missing identifiers
+- **Not Found:** Product IDs that don't exist in the database
 
 Check the browser console (F12) for detailed logs.
 
@@ -154,7 +154,7 @@ xyz-999,Non-Existent Product,99,100
 
 **Result:**
 -  Updated 1 product (abc-123)
-- ⚠️ Skipped 1 row (xyz-999 not found)
+- Skipped 1 row (xyz-999 not found)
 - Console shows: "Product not found with id: xyz-999"
 
 ---

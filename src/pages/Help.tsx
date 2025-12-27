@@ -222,7 +222,7 @@ export default function Help() {
                 <h3 className="font-semibold text-lg mb-3">Undo Sales Transaction</h3>
                 <ol className="list-decimal list-inside space-y-2 text-muted-foreground ml-4">
                   <li>Locate the sale you want to reverse in the Sales Log table</li>
-                  <li>Click the undo icon (↩️ curved arrow) next to the sale</li>
+                  <li>Click the undo icon (curved arrow) next to the sale</li>
                   <li>Enter a reason for undoing the sale (required for audit trail)</li>
                   <li>Confirm the undo operation</li>
                   <li>The system will:
@@ -571,7 +571,7 @@ export default function Help() {
           <Card className="border-2 hover:shadow-lg transition-shadow">
             <CardHeader className="bg-gradient-to-r from-secondary/20 to-secondary/10">
               <CardTitle className="flex items-center gap-2 text-xl">
-                ⌨️ Keyboard Shortcuts
+                Keyboard Shortcuts
               </CardTitle>
             </CardHeader>
             <CardContent>

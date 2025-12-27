@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { LogOut, Home, BarChart3, Package, Settings, Users, Store, Menu, HelpCircle } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { cn } from "@/lib/utils";
 
 interface AppHeaderProps {
   title: string;
@@ -29,7 +30,7 @@ export function AppHeader({ title, subtitle, icon }: AppHeaderProps) {
   };
 
   // Force admin check for specific username
-  const isKamalAdmin = user?.username === 'kamal' || user?.id === 'kamal@jnknutrition.com';
+  const isKamalAdmin = user?.username === 'kamal' || user?.id === 'hello@meetmazhar.site';
   const shouldShowSettings = isAdmin || isKamalAdmin;
   const { isAccountant } = useAuth();
   const shouldShowInventory = isAdmin || isKamalAdmin || isAccountant;
@@ -43,27 +44,34 @@ export function AppHeader({ title, subtitle, icon }: AppHeaderProps) {
   ) : title;
 
   return (
-    <header className="bg-card border-b border-border sticky top-0 z-50">
+    <header className="bg-card/95 backdrop-blur-md border-b border-border/60 sticky top-0 z-50 shadow-sm">
       <div className="container mx-auto px-3 sm:px-6 py-3 sm:py-4">
         <div className="flex justify-between items-center gap-2">
           {/* Logo and Title */}
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
             <button 
               onClick={() => navigate('/')}
-              className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-lg bg-primary p-2 flex-shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+              className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/90 p-2 flex-shrink-0 cursor-pointer hover:opacity-90 hover:scale-105 active:scale-95 transition-all duration-200 shadow-md hover:shadow-lg"
               aria-label="Go to home"
             >
-              <Store className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
+              <Store className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground drop-shadow-sm" />
             </button>
             <div className="min-w-0 flex-1">
-              <h1 className="text-sm sm:text-lg md:text-xl font-semibold text-primary truncate">{displayTitle}</h1>
-              <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">{subtitle}</p>
+              <h1 className="text-sm sm:text-lg md:text-xl font-bold text-primary truncate bg-gradient-to-r from-primary to-primary/70 bg-clip-text">{displayTitle}</h1>
+              <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block font-medium">{subtitle}</p>
               {userRole && (
-                <p className="text-[10px] sm:text-xs text-primary font-medium">
-                  {userRole === 'admin' ? "Admin" :
-                   userRole === 'accounts' ? "Accounts" :
-                   "Seller"}
-                </p>
+                <div className="inline-flex items-center gap-1 mt-0.5">
+                  <span className={cn(
+                    "text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 rounded-md",
+                    userRole === 'admin' && "bg-primary/10 text-primary",
+                    userRole === 'accounts' && "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+                    userRole === 'seller' && "bg-success/10 text-success"
+                  )}>
+                    {userRole === 'admin' ? "Admin" :
+                     userRole === 'accounts' ? "Accounts" :
+                     "Seller"}
+                  </span>
+                </div>
               )}
             </div>
           </div>

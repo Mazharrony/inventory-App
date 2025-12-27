@@ -18,12 +18,12 @@ export const initializeDatabase = async () => {
   try {
     console.log("Initializing database tables...");
     
-    // Ensure kamal@jnknutrition.com has admin role
+    // Ensure hello@meetmazhar.site has admin role
     const { data: adminRole, error: adminError } = await supabase
       .from('user_roles')
       .upsert(
         {
-          email: 'kamal@jnknutrition.com',
+          email: 'hello@meetmazhar.site',
           role: 'admin',
           is_active: true
         } as any,

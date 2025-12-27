@@ -125,7 +125,7 @@ async function applyMigrations() {
   console.log('   Required for: Clean product schema without expiry tracking');
   console.log('');
   console.log('⭐ 20251115_grant_admin_kamal.sql');
-  console.log('   Purpose: Sets up admin user (kamal@jnknutrition.com)');
+  console.log('   Purpose: Sets up admin user (hello@meetmazhar.site)');
   console.log('   Required for: Admin access to the system');
   console.log('');
   

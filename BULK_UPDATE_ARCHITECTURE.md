@@ -306,7 +306,7 @@ CREATE TABLE products (
 
 ### Scalability
 -  Handles hundreds of products efficiently
-- ⚠️ For thousands, consider batching (not implemented)
+- For thousands, consider batching (not implemented)
 -  Parallel updates via Promise.all
 
 ---
