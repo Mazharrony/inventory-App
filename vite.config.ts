@@ -45,8 +45,7 @@ export default defineConfig(({ mode }) => ({
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-toast'],
-          'supabase-vendor': ['@supabase/supabase-js', '@tanstack/react-query'],
-          'utils-vendor': ['lucide-react', 'date-fns', 'papaparse', 'xlsx', 'zod']
+          'utils-vendor': ['lucide-react', 'date-fns', 'papaparse', 'xlsx', 'zod', '@tanstack/react-query']
         },
         assetFileNames: (assetInfo) => {
           const info = assetInfo.name.split('.');
