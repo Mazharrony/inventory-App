@@ -1486,7 +1486,7 @@ export default function InventoryPage() {
                           </div>
                         ))}
                         <div className="px-4 py-2 text-xs text-muted-foreground bg-muted/50 border-t border-border/60">
-                          💡 Tip: Try "mu" for Muscle, "pro" for Protein
+                          Tip: Try "mu" for Muscle, "pro" for Protein
                         </div>
                       </div>
                     )}

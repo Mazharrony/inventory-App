@@ -104,7 +104,7 @@ async function applyMigrations() {
   
   migrations.forEach((migration) => {
     const isImportant = importantMigrations.includes(migration.name);
-    const priority = isImportant ? '⭐ PRIORITY' : '  ';
+    const priority = isImportant ? 'PRIORITY' : '  ';
     console.log(`   ${priority} ${migration.name}`);
     
     if (isImportant) {
@@ -116,15 +116,15 @@ async function applyMigrations() {
   console.log('Most Recent/Important Migrations:');
   console.log('========================================');
   console.log('');
-  console.log('⭐ 20251122_add_payment_reference.sql');
+  console.log('20251122_add_payment_reference.sql');
   console.log('   Purpose: Adds payment_reference column to sales table');
   console.log('   Required for: Card/Bank Transfer transaction references');
   console.log('');
-  console.log('⭐ 20251122_remove_expiry_date.sql');
+  console.log('20251122_remove_expiry_date.sql');
   console.log('   Purpose: Removes expiry_date column from products table');
   console.log('   Required for: Clean product schema without expiry tracking');
   console.log('');
-  console.log('⭐ 20251115_grant_admin_kamal.sql');
+  console.log('20251115_grant_admin_kamal.sql');
   console.log('   Purpose: Sets up admin user (hello@meetmazhar.site)');
   console.log('   Required for: Admin access to the system');
   console.log('');
